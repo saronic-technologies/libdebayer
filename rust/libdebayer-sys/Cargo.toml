@@ -1,0 +1,11 @@
+[package]
+name = "libdebayer-sys"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[build-dependencies]
+anyhow = "1.0.86"
+bindgen = "0.70.1"
+pkg-config = "0.3.30"

@@ -3,14 +3,16 @@
 
   inputs = {
     nixpkgs.url      = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.url  = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, ... }:
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
+        overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
-          inherit system;
+          inherit system overlays;
           config.allowUnfree = true;
         };
         libdebayer = pkgs.stdenv.mkDerivation {
@@ -90,7 +92,12 @@
             ncurses5 stdenv.cc binutils
             libdebayer
             libdebayer_cpp
+            rust-bin.nightly.latest.default
+
           ];
+
+          LIBCLANG_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux "${pkgs.libclang.lib}/lib/";
+
 
           shellHook = ''
              export CUDA_PATH=${pkgs.cudatoolkit}

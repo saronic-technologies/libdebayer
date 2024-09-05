@@ -1,6 +1,9 @@
 #ifndef DEBAYERC_H
 #define DEBAYERC_H
 
+#include "cuda_runtime.h"
+
+#include <stdio.h>
 #include <stdint.h>
 
 /* // Number of pixels to pad */
