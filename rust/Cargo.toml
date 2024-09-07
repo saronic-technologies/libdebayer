@@ -1,7 +1,13 @@
 [package]
-name = "libdebayer-rs"
+name = "libdebayer"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cust = "0.3.2"
+libdebayer-sys = { version = "0.1.0", path = "libdebayer-sys" }
+opencv = { version = "0.92.3", features = ["clang-runtime"] }
+thiserror = "1.0.63"
+
+[dev-dependencies]
+anyhow = "1.0.87"
+defvar = "0.1.0"

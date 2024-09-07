@@ -71,6 +71,10 @@ int32_t Debayer::Process(const raw_image_t* input, const bgr_image_t* output)
         return -2;
     }
 
+    std::cout << "inital raw_cuda_ptr: " << static_cast<void*>(raw_cuda_data) << std::endl;
+    std::cout << "raw_cuda_pitch: " << raw_cuda_pitch << std::endl;
+    std::cout << "padded raw_cuda_ptr: " << static_cast<void*>(raw_cuda_data + SARONIC_DEBAYER_PAD * raw_cuda_pitch + SARONIC_DEBAYER_PAD) << std::endl;
+    std::exit(1);
     cudaError_t r = cudaMemcpy2DAsync(
         raw_cuda_data + SARONIC_DEBAYER_PAD * raw_cuda_pitch + SARONIC_DEBAYER_PAD,
         raw_cuda_pitch,

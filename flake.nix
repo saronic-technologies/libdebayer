@@ -80,7 +80,7 @@
         packages.kodak_benchmark_cpp = kodak_benchmark_cpp;
         
         devShells.default = mkShell {
-          nativeBuildInputs = with pkgs; [ pkg-config cmake ];
+          nativeBuildInputs = with pkgs; [ pkg-config cmake clang ];
           buildInputs = with pkgs; [
             gitFull gitRepo gnupg autoconf curl
             procps gnumake util-linux m4 gperf unzip
@@ -93,10 +93,11 @@
             libdebayer
             libdebayer_cpp
             rust-bin.nightly.latest.default
-
+            rust-analyzer
+            imagemagick
           ];
 
-          LIBCLANG_PATH = pkgs.lib.optionalString pkgs.stdenv.isLinux "${pkgs.libclang.lib}/lib/";
+          LIBCLANG_PATH = "${pkgs.libclang.lib}/lib/";
 
 
           shellHook = ''

@@ -2,6 +2,8 @@ use anyhow::Result;
 
 fn main() -> Result<()> {
     println!("cargo::rerun-if-changed=src/lib.rs");
+    let cuda_libs = std::env::var("CUDA_PATH").expect("CUDA_PATH not set");
+
 
     let libdebayer_lib = pkg_config::probe_library("libdebayer")?;
 
@@ -39,6 +41,17 @@ fn main() -> Result<()> {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
+
+    for path in libdebayer_lib.link_paths {
+        println!("cargo:rustc-link-search={}", path.clone().into_os_string().into_string().unwrap());
+    }
+
+    for l in libdebayer_lib.libs {
+        println!("cargo:rustc-link-lib={}", l.to_string());
+    }
+
+    println!("cargo:rustc-link-search={}", cuda_libs);
+    println!("cargo:rustc-link-lib=cudart");
 
     Ok(())
 }
