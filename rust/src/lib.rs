@@ -149,9 +149,9 @@ impl TryFrom<DebayerOutputImage> for Mat {
     fn try_from(image: DebayerOutputImage) -> Result<Mat, Self::Error> {
         unsafe {
             let mut output_img = Mat::new_rows_cols(image.img.height as i32, image.img.width as i32, opencv::core::CV_8UC3)?;
-            let img_data = output_img.data_bytes_mut()?;
+            let img_data = output_img.data_mut();
 
-            let img_data_ptr = img_data.as_mut_ptr() as *mut c_void;
+            let img_data_ptr = img_data as *mut c_void;
 
             let img_pitch = {
                 let s = output_img.step1(0)?;
@@ -199,7 +199,7 @@ impl TryFrom<Mat> for DebayerInputImage {
 
         let input_image = CudaImage::new(width, height, 1)?;
 
-        let image_data: &[u8] = image.data_bytes()?;
+        // let image_data: &[u8] = image.data_bytes()?;
 
         let input_pitch = {
             let s = image.step1(0)?;
@@ -214,7 +214,7 @@ impl TryFrom<Mat> for DebayerInputImage {
             let raw_cuda_ptr = (input_image.raw_data as *mut u8).add((SARONIC_DEBAYER_PAD as usize) * input_image.pitch).add(SARONIC_DEBAYER_PAD as usize);
 
 
-            let image_data_ptr = image_data.as_ptr() as *const c_void;
+            let image_data_ptr = image.data() as *const c_void;
             
             let ret = cudaMemcpy2DAsync(raw_cuda_ptr as *mut c_void, input_image.pitch, image_data_ptr, input_pitch, width, height, cudaMemcpyKind::cudaMemcpyHostToDevice, stream);
 
