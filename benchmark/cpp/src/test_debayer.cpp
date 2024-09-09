@@ -300,7 +300,6 @@ int main() {
         // Save the debayered image
         std::string output_filename = image_file.substr(0, image_file.length() - 4) + ".out.png";
         cv::imwrite(output_filename, output_image);
-        std::exit(1);
 
         std::cout << "Debayered image saved as: " << output_filename << std::endl;
         std::cout << " + PSNR: " << psnr << " dB. G-channel PSNR: " << g_psnr << " dB" << std::endl;
