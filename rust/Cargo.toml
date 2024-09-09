@@ -1,6 +1,6 @@
 [package]
 name = "libdebayer"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "MPL-2.0"
 description = "debayer images with CUDA"
@@ -9,10 +9,11 @@ repository = "https://github.com/saronic-technologies/libdebayer/tree/main/rust"
 readme = "../README.md"
 
 [dependencies]
-libdebayer-sys = { version = "0.1.0", path = "libdebayer-sys" }
+libdebayer-sys = { version = "0.1.2", path = "libdebayer-sys" }
 opencv = { version = "0.92.3", features = ["clang-runtime"] }
 thiserror = "1.0.63"
 
 [dev-dependencies]
 anyhow = "1.0.87"
 defvar = "0.1.0"
+

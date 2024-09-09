@@ -149,7 +149,7 @@ checksum = "d8adc4bb1803a324070e64a98ae98f38934d91957a99cfb3a43dcbc01bc56439"
 
 [[package]]
 name = "libdebayer"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "defvar",
@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "libdebayer-sys"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "bindgen",

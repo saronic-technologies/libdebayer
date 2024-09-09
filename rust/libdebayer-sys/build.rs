@@ -1,57 +1,78 @@
 use anyhow::Result;
 
 fn main() -> Result<()> {
-    println!("cargo::rerun-if-changed=src/lib.rs");
-    let cuda_libs = std::env::var("CUDA_PATH").expect("CUDA_PATH not set");
+    let is_docs_rs = std::env::var_os("DOCS_RS").is_some();
 
 
-    let libdebayer_lib = pkg_config::probe_library("libdebayer")?;
+    if !is_docs_rs {
+        let cuda_libs = std::env::var("CUDA_PATH").expect("CUDA_PATH not set");
 
-    let include_args: Vec<String> = libdebayer_lib.include_paths
-        .iter()
-        .map(|path| format!("-I{}", path.to_string_lossy()))
-        .collect();
+        let libdebayer_lib = pkg_config::probe_library("libdebayer")?;
 
-    let link_args: Vec<String> = libdebayer_lib.link_paths
-        .iter()
-        .map(|path| format!("-L{}", path.clone().into_os_string().into_string().unwrap()))
-        .collect();
+        let include_args: Vec<String> = libdebayer_lib.include_paths
+            .iter()
+            .map(|path| format!("-I{}", path.to_string_lossy()))
+            .collect();
 
-    let libs_args: Vec<String> = libdebayer_lib.libs
-        .iter()
-        .map(|path| format!("-l{}", path.to_string()))
-        .collect();
+        let link_args: Vec<String> = libdebayer_lib.link_paths
+            .iter()
+            .map(|path| format!("-L{}", path.clone().into_os_string().into_string().unwrap()))
+            .collect();
 
-    let mut clang_args = Vec::new();
-    clang_args.extend(include_args);
-    clang_args.extend(link_args);
-    clang_args.extend(libs_args);
+        let libs_args: Vec<String> = libdebayer_lib.libs
+            .iter()
+            .map(|path| format!("-l{}", path.to_string()))
+            .collect();
 
-    let bindings = bindgen::Builder::default()
-        .clang_args(clang_args)
-        .header("wrapper.h")
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .default_enum_style(bindgen::EnumVariation::ModuleConsts)
-        .size_t_is_usize(true)
-        .generate()
-        .expect("Unable to generate bindings");
+        let mut clang_args = Vec::new();
+        clang_args.extend(include_args);
+        clang_args.extend(link_args);
+        clang_args.extend(libs_args);
 
-    // Write the bindings to the $OUT_DIR/bindings.rs file.
-    let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
+        let bindings = bindgen::Builder::default()
+            .clang_args(clang_args)
+            .header("wrapper.h")
+            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+            .default_enum_style(bindgen::EnumVariation::ModuleConsts)
+            .size_t_is_usize(true)
+            .generate()
+            .expect("Unable to generate bindings");
 
-    for path in libdebayer_lib.link_paths {
-        println!("cargo:rustc-link-search={}", path.clone().into_os_string().into_string().unwrap());
+        // Write the bindings to the $OUT_DIR/bindings.rs file.
+        let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+        bindings
+            .write_to_file(out_path.join("bindings.rs"))
+            .expect("Couldn't write bindings!");
+
+        for path in libdebayer_lib.link_paths {
+            println!("cargo:rustc-link-search={}", path.clone().into_os_string().into_string().unwrap());
+        }
+
+        for l in libdebayer_lib.libs {
+            println!("cargo:rustc-link-lib={}", l.to_string());
+        }
+
+        println!("cargo:rustc-link-search={}", cuda_libs);
+        println!("cargo:rustc-link-lib=cudart");
+    } else {
+        let mut clang_args = Vec::new();
+        
+        clang_args.push("-Idoc-headers");
+        let bindings = bindgen::Builder::default()
+            .clang_args(clang_args)
+            .header("wrapper.h")
+            .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+            .default_enum_style(bindgen::EnumVariation::ModuleConsts)
+            .size_t_is_usize(true)
+            .generate()
+            .expect("Unable to generate bindings");
+
+        // Write the bindings to the $OUT_DIR/bindings.rs file.
+        let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+        bindings
+            .write_to_file(out_path.join("bindings.rs"))
+            .expect("Couldn't write bindings!");
     }
-
-    for l in libdebayer_lib.libs {
-        println!("cargo:rustc-link-lib={}", l.to_string());
-    }
-
-    println!("cargo:rustc-link-search={}", cuda_libs);
-    println!("cargo:rustc-link-lib=cudart");
-
+    
     Ok(())
 }
