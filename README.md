@@ -24,12 +24,24 @@ implements 3 debayering algorithms:
 
 ### libdebayercpp
 
-This provides a higher level C++ api that performs cudaMemcpy's from
+This provides a higher level C++ API that performs cudaMemcpy's from
 host to device. An example of how to use this library is in
 `benchmark/cpp`.
 
-### libdebayer-rs TODO: implement higher level safe rust API with cuda
-runtime calls via the cust crate
+### libdebayer-rs
+
+This provides a higher level Rust API with `TryFrom` traits to go from
+an OpenCV `Mat` to a debayered `Mat`. An example of how to use this
+library is in `rust/examples/test_benchmark.rs`. This test benchmark
+is identical to the `benchmark/cpp` program.
+
+### Run Rust Example
+
+```
+nix develop
+cd rust
+KODAK_FOLDER_PATH="<path-to-benchmark-kodak-files>" cargo run --example test_benchmark
+```
 
 ## Benchmark
 
