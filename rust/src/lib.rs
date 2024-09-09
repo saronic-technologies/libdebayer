@@ -106,6 +106,9 @@ pub struct DebayerOutputImage {
 impl DebayerInputImage {
     // pub fn new(width: usize, )
 
+
+    /// Launches the debayering kernel on the GPU and uses the stream
+    /// created by the `TryFrom`/constructor.
     pub fn debayer(&mut self, algorithm: DebayerAlgorithm) -> Result<DebayerOutputImage, DebayerError> {
         unsafe {
             debayer_mirror_image(self.stream, self.img.width as i32, self.img.height as i32, self.img.pitch, self.img.raw_data as *mut u8)
@@ -146,6 +149,8 @@ impl DebayerInputImage {
 impl TryFrom<DebayerOutputImage> for Mat {
     type Error = DebayerError;
 
+    /// Copies the image from the GPU into an OpenCV Mat. Note this
+    /// will block until the cudaStreamSynchronize completes.
     fn try_from(image: DebayerOutputImage) -> Result<Mat, Self::Error> {
         unsafe {
             let mut output_img = Mat::new_rows_cols_with_default(image.img.height as i32, image.img.width as i32, opencv::core::CV_8UC3, opencv::core::Scalar::all(0.0))?;
@@ -183,6 +188,10 @@ impl TryFrom<DebayerOutputImage> for Mat {
 
 impl TryFrom<Mat> for DebayerInputImage {
     type Error = DebayerError;
+
+    /// Copies the image from an OpenCV Mat on to the GPU. This also
+    /// creates the cudaStream the cudaMemcpy will use and the
+    /// debayering kernel can use.
     fn try_from(image: Mat) -> Result<DebayerInputImage, Self::Error> {
         let width = image.cols() as usize;
         let height = image.rows() as usize;
