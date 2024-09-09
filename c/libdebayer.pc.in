@@ -8,5 +8,5 @@ Description: @PROJECT_DESCRIPTION@
 Version: @PROJECT_VERSION@
 
 Requires:
-Libs: -L${libdir} -llibdebayer
+Libs: -L${libdir} -ldebayer
 Cflags: -I${includedir}
