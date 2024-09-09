@@ -6,6 +6,7 @@ license = "MPL-2.0"
 description = "unsafe sys crate to the libdebayer C library"
 homepage = "https://github.com/saronic-technologies/libdebayer"
 repository = "https://github.com/saronic-technologies/libdebayer/tree/main/rust/libdebayer-sys"
+readme = "../../README.md"
 
 [dependencies]
 
