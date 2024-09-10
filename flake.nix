@@ -109,6 +109,12 @@
              export EXTRA_CCFLAGS="-I/usr/include"
           '';
         };
+
+        overlays = {
+          default = final: _prev: {
+            libdebayer = self.packages.${final.system};
+          };
+        };
       }
     );
 }
