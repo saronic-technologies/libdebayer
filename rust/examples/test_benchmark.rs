@@ -180,7 +180,7 @@ fn main() -> Result<(), anyhow::Error> {
 
             let bayer_image = convert_to_rggb(&img)?;
 
-            let mut debayer_input_image = DebayerInputImage::try_from(bayer_image.clone())?;
+            let mut debayer_input_image = DebayerInputImage::try_from(&bayer_image)?;
             let debayer_output_image = debayer_input_image.debayer(DebayerAlgorithm::Malvar2004Rggb2Bgr)?;
 
             let debayer_output_mat = Mat::try_from(debayer_output_image)?;

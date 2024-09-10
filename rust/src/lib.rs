@@ -1,6 +1,7 @@
 use libdebayer_sys::*;
 
-use opencv::core::Mat;
+use opencv::boxed_ref::BoxedRef;
+use opencv::core::{Mat, MatTraitConst};
 use opencv::prelude::*;
 
 use std::ffi::c_void;
@@ -186,53 +187,69 @@ impl TryFrom<DebayerOutputImage> for Mat {
     }
 }
 
-impl TryFrom<Mat> for DebayerInputImage {
+fn cv_to_debayer<T: MatTraitConst>(image: &T) -> Result<DebayerInputImage, DebayerError> {
+    let width = image.cols() as usize;
+    let height = image.rows() as usize;
+
+    let mut stream: cudaStream_t;
+    // Allocate
+    unsafe {
+        stream = std::ptr::null_mut();
+        let ret = cudaStreamCreate(&mut stream as *mut cudaStream_t);
+        if ret != cudaError::cudaSuccess {
+            return Err(DebayerError::Cuda(CudaError::CudaStreamCreateFailed(ret as u32)));
+        }
+    }
+
+    let input_image = CudaImage::new(width, height, 1)?;
+
+    let input_pitch = {
+        let s = image.step1(0)?;
+        if s != 0 {
+            s
+        } else {
+            width
+        }            
+    };
+
+    unsafe {
+        let raw_cuda_ptr = (input_image.raw_data as *mut u8).add((SARONIC_DEBAYER_PAD as usize) * input_image.pitch).add(SARONIC_DEBAYER_PAD as usize);
+
+
+        let image_data_ptr = image.data() as *const c_void;
+        
+        let ret = cudaMemcpy2DAsync(raw_cuda_ptr as *mut c_void, input_image.pitch, image_data_ptr, input_pitch, width, height, cudaMemcpyKind::cudaMemcpyHostToDevice, stream);
+
+        if ret != cudaError::cudaSuccess {
+            return Err(DebayerError::Cuda(CudaError::CudaMemcpy2DAsyncFailed(ret as u32)));
+        }
+    }
+
+    Ok(DebayerInputImage{
+        img: input_image,
+        stream
+    })
+}
+
+impl TryFrom<&Mat> for DebayerInputImage {
     type Error = DebayerError;
 
     /// Copies the image from an OpenCV Mat on to the GPU. This also
     /// creates the cudaStream the cudaMemcpy will use and the
     /// debayering kernel can use.
-    fn try_from(image: Mat) -> Result<DebayerInputImage, Self::Error> {
-        let width = image.cols() as usize;
-        let height = image.rows() as usize;
+    fn try_from(image: &Mat) -> Result<DebayerInputImage, Self::Error> {
+        let r = cv_to_debayer(image);
+        r
+    }
+}
 
-        let mut stream: cudaStream_t;
-        // Allocate
-        unsafe {
-            stream = std::ptr::null_mut();
-            let ret = cudaStreamCreate(&mut stream as *mut cudaStream_t);
-            if ret != cudaError::cudaSuccess {
-                return Err(Self::Error::Cuda(CudaError::CudaStreamCreateFailed(ret as u32)));
-            }
-        }
+impl TryFrom<&BoxedRef<'_, Mat>> for DebayerInputImage {
+    type Error = DebayerError;
 
-        let input_image = CudaImage::new(width, height, 1)?;
-
-        let input_pitch = {
-            let s = image.step1(0)?;
-            if s != 0 {
-                s
-            } else {
-                width
-            }            
-        };
-
-        unsafe {
-            let raw_cuda_ptr = (input_image.raw_data as *mut u8).add((SARONIC_DEBAYER_PAD as usize) * input_image.pitch).add(SARONIC_DEBAYER_PAD as usize);
-
-
-            let image_data_ptr = image.data() as *const c_void;
-            
-            let ret = cudaMemcpy2DAsync(raw_cuda_ptr as *mut c_void, input_image.pitch, image_data_ptr, input_pitch, width, height, cudaMemcpyKind::cudaMemcpyHostToDevice, stream);
-
-            if ret != cudaError::cudaSuccess {
-                return Err(Self::Error::Cuda(CudaError::CudaMemcpy2DAsyncFailed(ret as u32)));
-            }
-        }
-
-        Ok(DebayerInputImage{
-            img: input_image,
-            stream
-        })
+    /// Copies the image from an OpenCV Mat on to the GPU. This also
+    /// creates the cudaStream the cudaMemcpy will use and the
+    /// debayering kernel can use.
+    fn try_from(image: &BoxedRef<'_, Mat>) -> Result<DebayerInputImage, Self::Error> {
+        cv_to_debayer(image)
     }
 }
