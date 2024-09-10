@@ -3,11 +3,12 @@
 
   inputs = {
     nixpkgs.url      = "github:NixOS/nixpkgs/nixos-unstable";
+    jetpack-nixos.url = "github:anduril/jetpack-nixos";
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.url  = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
+  outputs = { self, nixpkgs, jetpack-nixos, rust-overlay, flake-utils, ... }:
     flake-utils.lib.eachSystem [ "aarch64-linux" "x86_64-linux" ] (system:
       let
         overlays = [ (import rust-overlay) ];
@@ -15,14 +16,16 @@
           inherit system overlays;
           config.allowUnfree = true;
         };
+
+        cudatoolkit = if system == "aarch64-linux" then jetpack-nixos.legacyPackages.aarch64-linux.cudaPackages.cudatoolkit else pkgs.cudatoolkit;
         libdebayer = pkgs.stdenv.mkDerivation {
           pname = "libdebayer";
           version = "0.1.0";
           src = ./c;
           nativeBuildInputs = [ pkgs.cmake ];
-          buildInputs = [ pkgs.cudatoolkit ];
+          buildInputs = [ cudatoolkit ];
           preConfigure = ''
-             export CUDA_PATH=${pkgs.cudatoolkit}
+             export CUDA_PATH=${cudatoolkit}
           '';
         };
 
@@ -31,9 +34,9 @@
           version = "0.1.0";
           src = ./cpp;
           nativeBuildInputs = [ pkgs.cmake pkgs.pkg-config ];
-          buildInputs = [ pkgs.cudatoolkit libdebayer ];
+          buildInputs = [ cudatoolkit libdebayer ];
           preConfigure = ''
-             export CUDA_PATH=${pkgs.cudatoolkit}
+             export CUDA_PATH=${cudatoolkit}
              export libdebayer_DIR=${libdebayer}/lib/cmake
           '';
         };
@@ -50,9 +53,9 @@
           version = "0.1.0";
           src = ./benchmark/cpp;
           nativeBuildInputs = [ pkgs.cmake pkgs.pkg-config ];
-          buildInputs = [ pkgs.cudatoolkit pkgs.opencv libdebayer libdebayer_cpp ];
+          buildInputs = [ cudatoolkit pkgs.opencv libdebayer libdebayer_cpp ];
           preConfigure = ''
-             export CUDA_PATH=${pkgs.cudatoolkit}
+             export CUDA_PATH=${cudatoolkit}
              export libdebayer_DIR=${libdebayer}/lib/cmake
              export libdebayercpp_DIR=${libdebayer_cpp}/lib/cmake
           '';
@@ -101,7 +104,7 @@
 
 
           shellHook = ''
-             export CUDA_PATH=${pkgs.cudatoolkit}
+             export CUDA_PATH=${cudatoolkit}
              export libdebayer_DIR=${libdebayer}/lib/cmake
              export libdebayercpp_DIR=${libdebayer_cpp}/lib/cmake
              # export LD_LIBRARY_PATH=${pkgs.linuxPackages.nvidia_x11}/lib:${pkgs.ncurses5}/lib
