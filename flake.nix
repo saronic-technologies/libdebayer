@@ -8,7 +8,7 @@
   };
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+    flake-utils.lib.eachSystem [ "aarch64-linux" "x86_64-linux" ] (system:
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
@@ -109,12 +109,13 @@
              export EXTRA_CCFLAGS="-I/usr/include"
           '';
         };
-
+      }
+    ) // {
         overlays = {
           default = final: _prev: {
-            libdebayer = self.packages.${final.system};
+            libdebayer = self.packages.${final.system}.libdebayer;
+            libdebayer_cpp = self.packages.${final.system}.libdebayer_cpp;
           };
         };
-      }
-    );
+    };
 }
