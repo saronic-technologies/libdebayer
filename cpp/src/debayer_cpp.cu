@@ -96,8 +96,12 @@ int32_t Debayer::Process(const raw_image_t* input, const bgr_image_t* output)
         } else if (input->format == SARONIC_DEBAYER_BGGR) {
           debayer_bggr2bgr_malvar2004(stream, input->width, input->height, raw_cuda_pitch, bgr_cuda_pitch, raw_cuda_data, bgr_cuda_data);
         }
-    } else if (input->algorithm == SARONIC_DEBAYER_SARONIC1) {
-      debayer_rggb2bgr_saronic1(stream, input->width, input->height, raw_cuda_pitch, bgr_cuda_pitch, raw_cuda_data, bgr_cuda_data);
+    } else if (input->algorithm == SARONIC_DEBAYER_MENON2007) {
+        if (input->format == SARONIC_DEBAYER_RGGB) {
+          debayer_rggb2bgr_menon2007(stream, input->width, input->height, raw_cuda_pitch, bgr_cuda_pitch, raw_cuda_data, bgr_cuda_data);
+        } else if (input->format == SARONIC_DEBAYER_BGGR) {
+          debayer_bggr2bgr_menon2007(stream, input->width, input->height, raw_cuda_pitch, bgr_cuda_pitch, raw_cuda_data, bgr_cuda_data);
+        }
     } else {
         std::cerr << "Error: unknown algorithm: " << input->algorithm << std::endl;
         return -6;

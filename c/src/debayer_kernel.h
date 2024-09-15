@@ -39,12 +39,22 @@ extern __global__ void rggb_bilinear(
     uint8_t* bgr,
     size_t bgr_pitch);
 
-extern __global__ void rggb_saronic1_g(
+extern __global__ void rggb_menon2007_g(
     const uint8_t* raw,
     int raw_pitch,
     uint8_t* bgr,
     int bgr_pitch);
 
-extern __global__ void rggb_saronic1_rb(
+extern __global__ void rggb_menon2007_rb(
+    uint8_t* bgr,
+    int bgr_pitch);
+
+extern __global__ void bggr_menon2007_g(
+    const uint8_t* raw,
+    int raw_pitch,
+    uint8_t* bgr,
+    int bgr_pitch);
+
+extern __global__ void bggr_menon2007_rb(
     uint8_t* bgr,
     int bgr_pitch);

@@ -21,7 +21,7 @@ enum {
 enum {
     SARONIC_DEBAYER_BILINEAR = 1,
     SARONIC_DEBAYER_MALVAR2004 = 2,
-    SARONIC_DEBAYER_SARONIC1 = 3,
+    SARONIC_DEBAYER_MENON2007 = 3,
 };
 
 typedef struct raw_image_ {
