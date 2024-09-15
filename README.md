@@ -54,7 +54,7 @@ run the following: `nix run .#kodak_benchmark_cpp`
 - OCV-EA gets Average PSNR: 28.616 dB
 - NPP gets Average PSNR: 28.8522 dB
 - libdebayer Malvar 2004 CUDA kernel gets Average PSNR: 33.4554 dB (+4.8394 dB)
-- libdebayer Menon 2004 CUDA kernel gets Average PSNR: 37.6907 dB (+9.0747 dB)
+- libdebayer Menon 2007 CUDA kernel gets Average PSNR: 37.6907 dB (+9.0747 dB)
 - Eliminates color fringing
 
 #### Image Results
