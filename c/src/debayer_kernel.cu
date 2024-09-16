@@ -426,9 +426,16 @@ __global__ void rggb_bilinear(
 
 
 //------------------------------------------------------------------------------
-// Saronic1 Algorithm
+// Menon 2007 Algorithm
 
-__global__ void rggb_saronic1_g(
+// This is an implementation of [2] with some modifications:
+// (1) Rounding is applied to all averages.
+// (2) When V/H gradients are close, the average is taken instead of picking.
+// The second change boosts PSNR from 36.9494 + 0.7413 dB = 37.6907 dB.
+
+#define ENABLE_CLOSE_AVERAGING
+
+__global__ void rggb_menon2007_g(
     const uint8_t* raw,
     int raw_pitch,
     uint8_t* bgr,
@@ -451,33 +458,48 @@ __global__ void rggb_saronic1_g(
         const uint8_t* P = block;
         uint8_t* bgr = bgr_block;
 
-        // Calculate G:
-        int16_t g_left = P[-1];
-        int16_t g_right = P[1];
-        int16_t g_up = P[-raw_pitch];
-        int16_t g_down = P[raw_pitch];
+        // Estimate G at R pixel
+        int16_t G_h = 0;
+        int16_t G_v = 0;
 
-        int16_t rb_left = P[-2];
-        int16_t rb_right = P[2];
-        int16_t rb_center = P[0];
-        int16_t rb_up = P[-2 * raw_pitch];
-        int16_t rb_down = P[2 * raw_pitch];
+        // Horizontal estimation
+        int16_t G_left = P[-1];
+        int16_t G_right = P[1];
+        int16_t R_center = P[0];
+        int16_t R_left = P[-2];
+        int16_t R_right = P[2];
 
-        int16_t dg_y = abs(g_down - g_up);
-        int16_t dg_x = abs(g_right - g_left);
+        G_h = ((G_left + G_right + 1) >> 1) + ((2 * R_center - R_left - R_right + 2) >> 2);
 
-        int16_t fy = (g_up + g_down) * 2 + (2 * rb_center - rb_up - rb_down);
-        int16_t fx = (g_left + g_right) * 2 + (2 * rb_center - rb_left - rb_right);
+        // Vertical estimation
+        int16_t G_up = P[-raw_pitch];
+        int16_t G_down = P[raw_pitch];
+        int16_t R_up = P[-2 * raw_pitch];
+        int16_t R_down = P[2 * raw_pitch];
 
-#if 0
-        // Edge-aware: Use more stable estimate
-        const int16_t T = 34;
-        fy = (dg_y >= dg_x + T) ? fx : fy;
-        fx = (dg_x >= dg_y + T) ? fy : fx;
+        G_v = ((G_up + G_down + 1) >> 1) + ((2 * R_center - R_up - R_down + 2) >> 2);
+
+        // Compute classifiers S_h and S_v
+        int16_t C_center_h = R_center - G_h;
+        int16_t C_left = R_left - G_left;
+        int16_t C_right = R_right - G_right;
+        int16_t S_h = abs(C_center_h - C_left) + abs(C_center_h - C_right);
+
+        int16_t C_center_v = R_center - G_v;
+        int16_t C_up = R_up - G_up;
+        int16_t C_down = R_down - G_down;
+        int16_t S_v = abs(C_center_v - C_up) + abs(C_center_v - C_down);
+
+        // Decision
+        int16_t G_est = (S_h <= S_v) ? G_h : G_v;
+#ifdef ENABLE_CLOSE_AVERAGING
+        if (abs(S_h - S_v) <= 27) {
+            G_est = (G_h + G_v + 1) >> 1;
+        }
 #endif
 
         //bgr[0] = 255;
-        bgr[1] = saturate_cast_int16_to_uint8((fx + fy + 4) / 8);
+        bgr[1] = saturate_cast_int16_to_uint8(G_est);
         bgr[2] = P[0];
     }
 
@@ -486,33 +508,49 @@ __global__ void rggb_saronic1_g(
         const uint8_t* P = block + raw_pitch + 1;
         uint8_t* bgr = bgr_block + bgr_pitch + 3;
 
-        // Calculate G:
-        int16_t g_left = P[-1];
-        int16_t g_right = P[1];
-        int16_t g_up = P[-raw_pitch];
-        int16_t g_down = P[raw_pitch];
+        // Estimate G at B pixel
+        int16_t G_h = 0;
+        int16_t G_v = 0;
 
-        int16_t rb_left = P[-2];
-        int16_t rb_right = P[2];
-        int16_t rb_center = P[0];
-        int16_t rb_up = P[-2 * raw_pitch];
-        int16_t rb_down = P[2 * raw_pitch];
+        // Horizontal estimation
+        int16_t G_left = P[-1];
+        int16_t G_right = P[1];
+        int16_t B_center = P[0];
+        int16_t B_left = P[-2];
+        int16_t B_right = P[2];
 
-        int16_t dg_y = abs(g_down - g_up);
-        int16_t dg_x = abs(g_right - g_left);
+        G_h = ((G_left + G_right + 1) >> 1) + ((2 * B_center - B_left - B_right + 2) >> 2);
 
-        int16_t fy = (g_up + g_down) * 2 + (2 * rb_center - rb_up - rb_down);
-        int16_t fx = (g_left + g_right) * 2 + (2 * rb_center - rb_left - rb_right);
+        // Vertical estimation
+        int16_t G_up = P[-raw_pitch];
+        int16_t G_down = P[raw_pitch];
+        int16_t B_up = P[-2 * raw_pitch];
+        int16_t B_down = P[2 * raw_pitch];
 
-#if 0
-        // Edge-aware: Use more stable estimate
-        const int16_t T = 34;
-        fy = (dg_y >= dg_x + T) ? fx : fy;
-        fx = (dg_x >= dg_y + T) ? fy : fx;
+        G_v = ((G_up + G_down + 1) >> 1) + ((2 * B_center - B_up - B_down + 2) >> 2);
+
+        // Compute classifiers S_h and S_v
+        int16_t C_center_h = B_center - G_h;
+        int16_t C_left = B_left - G_left;
+        int16_t C_right = B_right - G_right;
+        int16_t S_h = abs(C_center_h - C_left) + abs(C_center_h - C_right);
+
+        int16_t C_center_v = B_center - G_v;
+        int16_t C_up = B_up - G_up;
+        int16_t C_down = B_down - G_down;
+        int16_t S_v = abs(C_center_v - C_up) + abs(C_center_v - C_down);
+
+        // Decision
+        int16_t G_est = (S_h <= S_v) ? G_h : G_v;
+#ifdef ENABLE_CLOSE_AVERAGING
+        if (abs(S_h - S_v) <= 29) {
+            G_est = (G_h + G_v + 1) >> 1;
+        }
 #endif
 
+        // Clamp the value
         bgr[0] = P[0];
-        bgr[1] = saturate_cast_int16_to_uint8((fx + fy + 4) / 8);
+        bgr[1] = saturate_cast_int16_to_uint8(G_est);
         //bgr[2] = 255;
     }
 
@@ -537,7 +575,7 @@ __global__ void rggb_saronic1_g(
     }
 }
 
-__global__ void rggb_saronic1_rb(
+__global__ void rggb_menon2007_rb(
     uint8_t* bgr,
     int bgr_pitch)
 {
@@ -554,209 +592,487 @@ __global__ void rggb_saronic1_rb(
 
     // Upper Left:
     {
-        uint8_t* bgr = bgr_block;
+        uint8_t* bgr_pixel = bgr_block; // Pointer to the pixel at P0
 
-        // Calculate B at R:
-        /*
-            B G B
-            G x G
-            B G B
-        */
-        int16_t b_ur = bgr[3-bgr_pitch];
-        int16_t b_ul = bgr[-3-bgr_pitch];
-        int16_t b_ll = bgr[-3+bgr_pitch];
-        int16_t b_lr = bgr[3+bgr_pitch];
+        // Coordinates of the current pixel
+        // For simplicity, we assume that the image is padded sufficiently
 
-#if 0
-        int16_t g_center = bgr[1];
-        int16_t g_ur = bgr[1+3-bgr_pitch];
-        int16_t g_ul = bgr[1-3-bgr_pitch];
-        int16_t g_ll = bgr[1-3+bgr_pitch];
-        int16_t g_lr = bgr[1+3+bgr_pitch];
+        // Edge-Directed Interpolation of (B - G) at red pixel
+        // Using diagonal neighbors for interpolation
 
-        int16_t dg_x = abs(g_ur - g_ll);
-        int16_t dg_y = abs(g_ul - g_lr);
+        // Get neighboring blue and green values
+        int16_t B_UR = bgr_pixel[0 + 3 - bgr_pitch];       // Blue at (i - 1, j + 1)
+        int16_t B_LL = bgr_pixel[0 - 3 + bgr_pitch];       // Blue at (i + 1, j - 1)
+        int16_t G_UR = bgr_pixel[1 + 3 - bgr_pitch];       // Green at (i - 1, j + 1)
+        int16_t G_LL = bgr_pixel[1 - 3 + bgr_pitch];       // Green at (i + 1, j - 1)
 
-        int16_t fx = (b_ur + b_ll) * 2 + 2 * g_center - g_ur - g_ll;
-        int16_t fy = (b_ul + b_lr) * 2 + 2 * g_center - g_ul - g_lr;
+        int16_t B_UL = bgr_pixel[0 - 3 - bgr_pitch];       // Blue at (i - 1, j - 1)
+        int16_t B_LR = bgr_pixel[0 + 3 + bgr_pitch];       // Blue at (i + 1, j + 1)
+        int16_t G_UL = bgr_pixel[1 - 3 - bgr_pitch];       // Green at (i - 1, j - 1)
+        int16_t G_LR = bgr_pixel[1 + 3 + bgr_pitch];       // Green at (i + 1, j + 1)
 
-        // Edge-aware: Use more stable estimate
-        const int16_t T = 34;
-        fy = (dg_y >= dg_x + T) ? fx : fy;
-        fx = (dg_x >= dg_y + T) ? fy : fx;
+        // Compute color differences
+        int16_t CD_UR = B_UR - G_UR;
+        int16_t CD_LL = B_LL - G_LL;
+        int16_t CD_UL = B_UL - G_UL;
+        int16_t CD_LR = B_LR - G_LR;
 
-        bgr[0] = saturate_cast_int16_to_uint8((fx + fy + 4) / 8);
-#else
-        int16_t r_up = bgr[2 - bgr_pitch*2];
-        int16_t r_down = bgr[2 + bgr_pitch*2];
-        int16_t r_left = bgr[2 - 6];
-        int16_t r_right = bgr[2 + 6];
-        int16_t r_center = bgr[2];
+        // Horizontal and Vertical estimates of (B - G)
+        int16_t CD_h = (CD_UL + CD_LR + 1) >> 1;
+        int16_t CD_v = (CD_UR + CD_LL + 1) >> 1;
 
-        int16_t fx = (r_center * 6 - (r_left + r_right) * 3) + (b_ur + b_ll) * 4;
-        int16_t fy = (r_center * 6 - (r_down + r_up) * 3) + (b_lr + b_ul) * 4;
+        // Compute gradients for edge detection
+        int16_t Grad_h = abs((CD_UL - CD_LR));
+        int16_t Grad_v = abs((CD_UR - CD_LL));
 
-#if 0
-        int16_t dg_x = abs(b_ur - b_ll);
-        int16_t dg_y = abs(b_lr - b_ul);
-
-        // Edge-aware: Use more stable estimate
-        const int16_t T = 34;
-        fy = (dg_y >= dg_x + T) ? fx : fy;
-        fx = (dg_x >= dg_y + T) ? fy : fx;
+        // Decision based on gradients
+        int16_t CD_est = (Grad_h <= Grad_v) ? CD_h : CD_v;
+#ifdef ENABLE_CLOSE_AVERAGING
+        if (abs(Grad_h - Grad_v) <= 26) {
+            CD_est = (CD_h + CD_v + 1) >> 1;
+        }
 #endif
 
-        bgr[0] = saturate_cast_int16_to_uint8((fx + fy + 8) / 16);
-#endif
+        // Estimate Blue value at red pixel
+        int16_t G_center = bgr_pixel[1];   // Green at current red pixel
+        int16_t B_est = G_center + CD_est;
+
+        // Clamp the value
+        bgr_pixel[0] = saturate_cast_int16_to_uint8(B_est);
     }
 
     // Lower Right
     {
-        uint8_t* bgr = bgr_block + bgr_pitch + 3;
+        uint8_t* bgr_pixel = bgr_block + bgr_pitch + 3; // Pointer to the pixel at P3
 
-        // Calculate R at B:
-        /*
-            R G R
-            G B G
-            R G R
-        */
-        int16_t r_ur = bgr[2+3-bgr_pitch];
-        int16_t r_ul = bgr[2-3-bgr_pitch];
-        int16_t r_ll = bgr[2-3+bgr_pitch];
-        int16_t r_lr = bgr[2+3+bgr_pitch];
+        // Get neighboring red and green values
+        int16_t R_UL = bgr_pixel[2 - 3 - bgr_pitch];    // Red at (i - 1, j - 1)
+        int16_t R_LR = bgr_pixel[2 + 3 + bgr_pitch];    // Red at (i + 1, j + 1)
+        int16_t G_UL = bgr_pixel[1 - 3 - bgr_pitch];    // Green at (i - 1, j - 1)
+        int16_t G_LR = bgr_pixel[1 + 3 + bgr_pitch];    // Green at (i + 1, j + 1)
 
-#if 0
-        int16_t g_center = bgr[1];
-        int16_t g_ur = bgr[1+3-bgr_pitch];
-        int16_t g_ul = bgr[1-3-bgr_pitch];
-        int16_t g_ll = bgr[1-3+bgr_pitch];
-        int16_t g_lr = bgr[1+3+bgr_pitch];
+        int16_t R_UR = bgr_pixel[2 + 3 - bgr_pitch];    // Red at (i - 1, j + 1)
+        int16_t R_LL = bgr_pixel[2 - 3 + bgr_pitch];    // Red at (i + 1, j - 1)
+        int16_t G_UR = bgr_pixel[1 + 3 - bgr_pitch];    // Green at (i - 1, j + 1)
+        int16_t G_LL = bgr_pixel[1 - 3 + bgr_pitch];    // Green at (i + 1, j - 1)
 
-        int16_t dg_x = abs(g_ur - g_ll);
-        int16_t dg_y = abs(g_ul - g_lr);
+        // Compute color differences
+        int16_t CD_UL = R_UL - G_UL;
+        int16_t CD_LR = R_LR - G_LR;
+        int16_t CD_UR = R_UR - G_UR;
+        int16_t CD_LL = R_LL - G_LL;
 
-        int16_t fx = (r_ur + r_ll) * 2 + 2 * g_center - g_ur - g_ll;
-        int16_t fy = (r_ul + r_lr) * 2 + 2 * g_center - g_ul - g_lr;
+        // Horizontal and Vertical estimates of (R - G)
+        int16_t CD_h = (CD_UL + CD_LR + 1) >> 1;
+        int16_t CD_v = (CD_UR + CD_LL + 1) >> 1;
 
-        // Edge-aware: Use more stable estimate
-        const int16_t T = 34;
-        fy = (dg_y >= dg_x + T) ? fx : fy;
-        fx = (dg_x >= dg_y + T) ? fy : fx;
+        // Compute gradients for edge detection
+        int16_t Grad_h = abs((CD_UL - CD_LR));
+        int16_t Grad_v = abs((CD_UR - CD_LL));
 
-        bgr[2] = saturate_cast_int16_to_uint8((fx + fy + 4) / 8);
-#else
-        int16_t b_up = bgr[-bgr_pitch*2];
-        int16_t b_down = bgr[bgr_pitch*2];
-        int16_t b_left = bgr[-6];
-        int16_t b_right = bgr[6];
-        int16_t b_center = bgr[0];
-
-        int16_t fx = (b_center * 6 - (b_left + b_right) * 3) + (r_ur + r_ll) * 4;
-        int16_t fy = (b_center * 6 - (b_down + b_up) * 3) + (r_lr + r_ul) * 4;
-
-#if 0
-        int16_t dg_x = abs(r_ur - r_ll);
-        int16_t dg_y = abs(r_lr - r_ul);
-
-        // Edge-aware: Use more stable estimate
-        const int16_t T = 34;
-        fx = (dg_x >= dg_y + T) ? fy : fx;
-        fy = (dg_y >= dg_x + T) ? fx : fy;
+        // Decision based on gradients
+        int16_t CD_est = (Grad_h <= Grad_v) ? CD_h : CD_v;
+#ifdef ENABLE_CLOSE_AVERAGING
+        if (abs(Grad_h - Grad_v) <= 26) {
+            CD_est = (CD_h + CD_v + 1) >> 1;
+        }
 #endif
 
-        bgr[2] = saturate_cast_int16_to_uint8((fx + fy + 8) / 16);
-#endif
+        // Estimate Red value at blue pixel
+        int16_t G_center = bgr_pixel[1];   // Green at current blue pixel
+        int16_t R_est = G_center + CD_est;
+
+        // Clamp the value
+        bgr_pixel[2] = saturate_cast_int16_to_uint8(R_est);
     }
 
     // Lower Left
     {
-        uint8_t* bgr = bgr_block + bgr_pitch;
+        uint8_t* bgr_pixel = bgr_block + bgr_pitch; // Pointer to the pixel at P2
 
-        int16_t g_center = bgr[1];
-        int16_t g_left = bgr[1-3];
-        int16_t g_right = bgr[1+3];
-        int16_t g_up = bgr[1-bgr_pitch];
-        int16_t g_down = bgr[1+bgr_pitch];
+        // Estimate Red at green pixel using bilinear interpolation of (R - G)
+        int16_t R_up = bgr_pixel[2 - bgr_pitch];       // Red at (i - 1, j)
+        int16_t R_down = bgr_pixel[2 + bgr_pitch];     // Red at (i + 1, j)
+        int16_t G_up = bgr_pixel[1 - bgr_pitch];
+        int16_t G_down = bgr_pixel[1 + bgr_pitch];
 
-        int16_t b_left = bgr[-3];
-        int16_t b_right = bgr[3];
+        int16_t CD_RU = R_up - G_up;
+        int16_t CD_RD = R_down - G_down;
 
-        int16_t r_up = bgr[2 - bgr_pitch];
-        int16_t r_down = bgr[2 + bgr_pitch];
+        int16_t CD_R = (CD_RU + CD_RD + 1) >> 1;
+        int16_t G_center = bgr_pixel[1];
+        int16_t R_est = G_center + CD_R;
 
-        int16_t g_left2 = bgr[1-6];
-        int16_t g_right2 = bgr[1+6];
-        int16_t g_up2 = bgr[1-2*bgr_pitch];
-        int16_t g_down2 = bgr[1+2*bgr_pitch];
-        int16_t g_ul = bgr[1-3-bgr_pitch];
-        int16_t g_ur = bgr[1+3-bgr_pitch];
-        int16_t g_ll = bgr[1-3+bgr_pitch];
-        int16_t g_lr = bgr[1+3+bgr_pitch];
+        // Estimate Blue at green pixel using bilinear interpolation of (B - G)
+        int16_t B_left = bgr_pixel[0 - 3];         // Blue at (i, j - 1)
+        int16_t B_right = bgr_pixel[0 + 3];        // Blue at (i, j + 1)
+        int16_t G_left = bgr_pixel[1 - 3];
+        int16_t G_right = bgr_pixel[1 + 3];
 
-#if 1
-        int16_t x = 10 * g_center
-            + 8 * (b_left + b_right)
-            - 2 * (g_left + g_right + g_ul + g_ur + g_ll + g_lr)
-            + g_up + g_down;
-        bgr[0] = saturate_cast_int16_to_uint8((x + 8) / 16);
-#else
-        bgr[0] = saturate_cast_int16_to_uint8((2 * (b_left + b_right) + 2 * g_center - g_left - g_right + 2) / 4);
-#endif
+        int16_t CD_BL = B_left - G_left;
+        int16_t CD_BR = B_right - G_right;
 
-#if 1
-        int16_t y = 10 * g_center
-            + 8 * (r_up + r_down)
-            - 2 * (g_up2 + g_down2 + g_ul + g_ur + g_ll + g_lr)
-            + g_left2 + g_right2;
-        bgr[2] = saturate_cast_int16_to_uint8((y + 8) / 16);
-#else
-        bgr[2] = saturate_cast_int16_to_uint8((2 * (r_up + r_down) + 2 * g_center - g_up - g_down + 2) / 4);
-#endif
+        int16_t CD_B = (CD_BL + CD_BR + 1) >> 1;
+        int16_t B_est = G_center + CD_B;
+
+        // Clamp the values
+        bgr_pixel[2] = saturate_cast_int16_to_uint8(R_est);
+        bgr_pixel[0] = saturate_cast_int16_to_uint8(B_est);
     }
 
     // Upper Right
     {
+        uint8_t* bgr_pixel = bgr_block + 3; // Pointer to the pixel at P1
+
+        // Estimate Red at green pixel using bilinear interpolation of (R - G)
+        int16_t R_left = bgr_pixel[2 - 3];       // Red at (i, j - 1)
+        int16_t R_right = bgr_pixel[2 + 3];      // Red at (i, j + 1)
+        int16_t G_left = bgr_pixel[1 - 3];       // Green at (i, j - 1)
+        int16_t G_right = bgr_pixel[1 + 3];      // Green at (i, j + 1)
+
+        int16_t CD_RL = R_left - G_left;
+        int16_t CD_RR = R_right - G_right;
+
+        int16_t CD_R = (CD_RL + CD_RR + 1) >> 1;
+        int16_t G_center = bgr_pixel[1];
+        int16_t R_est = G_center + CD_R;
+
+        // Estimate Blue at green pixel using bilinear interpolation of (B - G)
+        int16_t B_up = bgr_pixel[0 - bgr_pitch]; // Blue at (i - 1, j)
+        int16_t B_down = bgr_pixel[0 + bgr_pitch]; // Blue at (i + 1, j)
+        int16_t G_up = bgr_pixel[1 - bgr_pitch];
+        int16_t G_down = bgr_pixel[1 + bgr_pitch];
+
+        int16_t CD_BU = B_up - G_up;
+        int16_t CD_BD = B_down - G_down;
+
+        int16_t CD_B = (CD_BU + CD_BD + 1) >> 1;
+        int16_t B_est = G_center + CD_B;
+
+        // Clamp the values
+        bgr_pixel[2] = saturate_cast_int16_to_uint8(R_est);
+        bgr_pixel[0] = saturate_cast_int16_to_uint8(B_est);
+    }
+}
+
+__global__ void bggr_menon2007_g(
+    const uint8_t* raw,
+    int raw_pitch,
+    uint8_t* bgr,
+    int bgr_pitch)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x; // Column index in 2x2 blocks
+    int y = blockIdx.y * blockDim.y + threadIdx.y; // Row index in 2x2 blocks
+
+    // Calculate the starting index of the 2x2 block
+    const uint8_t* block = raw + (y * raw_pitch + x) * 2;
+    uint8_t* bgr_block = bgr + (y * bgr_pitch + x * 3) * 2;
+
+    /*
+        BGGR pattern in a 2x2 block:
+
+            B G
+            G R
+    */
+
+    // Upper Left (P0): B pixel
+    {
+        const uint8_t* P = block;
+        uint8_t* bgr = bgr_block;
+
+        // Estimate G at B pixel
+        int16_t G_h = 0;
+        int16_t G_v = 0;
+
+        // Horizontal estimation
+        int16_t G_left = P[-1];        // G at (i, j - 1)
+        int16_t G_right = P[1];        // G at (i, j + 1)
+        int16_t B_center = P[0];       // B at (i, j)
+        int16_t B_left = P[-2];        // B at (i, j - 2)
+        int16_t B_right = P[2];        // B at (i, j + 2)
+
+        G_h = ((G_left + G_right + 1) >> 1) + ((2 * B_center - B_left - B_right + 2) >> 2);
+
+        // Vertical estimation
+        int16_t G_up = P[-raw_pitch];        // G at (i - 1, j)
+        int16_t G_down = P[raw_pitch];       // G at (i + 1, j)
+        int16_t B_up = P[-2 * raw_pitch];    // B at (i - 2, j)
+        int16_t B_down = P[2 * raw_pitch];   // B at (i + 2, j)
+
+        G_v = ((G_up + G_down + 1) >> 1) + ((2 * B_center - B_up - B_down + 2) >> 2);
+
+        // Compute classifiers S_h and S_v
+        int16_t C_center_h = B_center - G_h;
+        int16_t C_left = B_left - G_left;
+        int16_t C_right = B_right - G_right;
+        int16_t S_h = abs(C_center_h - C_left) + abs(C_center_h - C_right);
+
+        int16_t C_center_v = B_center - G_v;
+        int16_t C_up = B_up - G_up;
+        int16_t C_down = B_down - G_down;
+        int16_t S_v = abs(C_center_v - C_up) + abs(C_center_v - C_down);
+
+        // Decision
+        int16_t G_est = (S_h <= S_v) ? G_h : G_v;
+#ifdef ENABLE_CLOSE_AVERAGING
+        if (abs(S_h - S_v) <= 29) {
+            G_est = (G_h + G_v + 1) >> 1;
+        }
+#endif
+
+        // Clamp the value
+        bgr[0] = P[0]; // B value
+        bgr[1] = saturate_cast_int16_to_uint8(G_est);
+        // bgr[2] = 255; // R value (to be filled in later)
+    }
+
+    // Upper Right (P1): G pixel
+    {
+        const uint8_t* P = block + 1;
         uint8_t* bgr = bgr_block + 3;
 
-        int16_t g_center = bgr[1];
-        int16_t g_left = bgr[1-3];
-        int16_t g_right = bgr[1+3];
-        int16_t g_up = bgr[1-bgr_pitch];
-        int16_t g_down = bgr[1+bgr_pitch];
+        // G pixel, green value is known
+        bgr[1] = P[0];
+    }
 
-        int16_t r_left = bgr[2 - 3];
-        int16_t r_right = bgr[2 + 3];
+    // Lower Left (P2): G pixel
+    {
+        const uint8_t* P = block + raw_pitch;
+        uint8_t* bgr = bgr_block + bgr_pitch;
 
-        int16_t b_up = bgr[-bgr_pitch];
-        int16_t b_down = bgr[bgr_pitch];
+        // G pixel, green value is known
+        bgr[1] = P[0];
+    }
 
-        int16_t g_left2 = bgr[1-6];
-        int16_t g_right2 = bgr[1+6];
-        int16_t g_up2 = bgr[1-2*bgr_pitch];
-        int16_t g_down2 = bgr[1+2*bgr_pitch];
-        int16_t g_ul = bgr[1-3-bgr_pitch];
-        int16_t g_ur = bgr[1+3-bgr_pitch];
-        int16_t g_ll = bgr[1-3+bgr_pitch];
-        int16_t g_lr = bgr[1+3+bgr_pitch];
+    // Lower Right (P3): R pixel
+    {
+        const uint8_t* P = block + raw_pitch + 1;
+        uint8_t* bgr = bgr_block + bgr_pitch + 3;
 
-#if 1
-        int16_t x = 10 * g_center
-            + 8 * (b_up + b_down)
-            - 2 * (g_up + g_down + g_ul + g_ur + g_ll + g_lr)
-            + g_left + g_right;
-        bgr[0] = saturate_cast_int16_to_uint8((x + 8) / 16);
-#else
-        bgr[0] = saturate_cast_int16_to_uint8((2 * (b_up + b_down) + 2 * g_center - g_up - g_down + 2) / 4);
+        // Estimate G at R pixel
+        int16_t G_h = 0;
+        int16_t G_v = 0;
+
+        // Horizontal estimation
+        int16_t G_left = P[-1];        // G at (i, j - 1)
+        int16_t G_right = P[1];        // G at (i, j + 1)
+        int16_t R_center = P[0];       // R at (i, j)
+        int16_t R_left = P[-2];        // R at (i, j - 2)
+        int16_t R_right = P[2];        // R at (i, j + 2)
+
+        G_h = ((G_left + G_right + 1) >> 1) + ((2 * R_center - R_left - R_right + 2) >> 2);
+
+        // Vertical estimation
+        int16_t G_up = P[-raw_pitch];        // G at (i - 1, j)
+        int16_t G_down = P[raw_pitch];       // G at (i + 1, j)
+        int16_t R_up = P[-2 * raw_pitch];    // R at (i - 2, j)
+        int16_t R_down = P[2 * raw_pitch];   // R at (i + 2, j)
+
+        G_v = ((G_up + G_down + 1) >> 1) + ((2 * R_center - R_up - R_down + 2) >> 2);
+
+        // Compute classifiers S_h and S_v
+        int16_t C_center_h = R_center - G_h;
+        int16_t C_left = R_left - G_left;
+        int16_t C_right = R_right - G_right;
+        int16_t S_h = abs(C_center_h - C_left) + abs(C_center_h - C_right);
+
+        int16_t C_center_v = R_center - G_v;
+        int16_t C_up = R_up - G_up;
+        int16_t C_down = R_down - G_down;
+        int16_t S_v = abs(C_center_v - C_up) + abs(C_center_v - C_down);
+
+        // Decision
+        int16_t G_est = (S_h <= S_v) ? G_h : G_v;
+#ifdef ENABLE_CLOSE_AVERAGING
+        if (abs(S_h - S_v) <= 27) {
+            G_est = (G_h + G_v + 1) >> 1;
+        }
 #endif
 
-#if 1
-        int16_t y = 10 * g_center
-            + 8 * (r_left + r_right)
-            - 2 * (g_left2 + g_right2 + g_ul + g_ur + g_ll + g_lr)
-            + g_up2 + g_down2;
-        bgr[2] = saturate_cast_int16_to_uint8((y + 8) / 16);
-#else
-        bgr[2] = saturate_cast_int16_to_uint8((2 * (r_left + r_right) + 2 * g_center - g_left - g_right + 2) / 4);
+        // Clamp the value
+        // bgr[0] = 255; // B value (to be filled in later)
+        bgr[1] = saturate_cast_int16_to_uint8(G_est);
+        bgr[2] = P[0]; // R value
+    }
+}
+
+__global__ void bggr_menon2007_rb(
+    uint8_t* bgr,
+    int bgr_pitch)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x; // Column index in 2x2 blocks
+    int y = blockIdx.y * blockDim.y + threadIdx.y; // Row index in 2x2 blocks
+
+    // Calculate the starting index of the 2x2 block
+    uint8_t* bgr_block = bgr + (y * bgr_pitch + x * 3) * 2;
+
+    /*
+        BGGR pattern in a 2x2 block:
+
+        Positions:
+        P0: Upper Left (B pixel)
+        P1: Upper Right (G pixel)
+        P2: Lower Left (G pixel)
+        P3: Lower Right (R pixel)
+    */
+
+    // Upper Left (P0): B pixel
+    {
+        uint8_t* bgr_pixel = bgr_block; // Pointer to the pixel at P0
+
+        // Estimate Red at Blue pixel (similar to estimating Blue at Red pixel in RGGB)
+        // Get neighboring red and green values
+        int16_t R_UR = bgr_pixel[2 + 3 - bgr_pitch];    // Red at (i - 1, j + 1)
+        int16_t R_LL = bgr_pixel[2 - 3 + bgr_pitch];    // Red at (i + 1, j - 1)
+        int16_t G_UR = bgr_pixel[1 + 3 - bgr_pitch];    // Green at (i - 1, j + 1)
+        int16_t G_LL = bgr_pixel[1 - 3 + bgr_pitch];    // Green at (i + 1, j - 1)
+
+        int16_t R_UL = bgr_pixel[2 - 3 - bgr_pitch];    // Red at (i - 1, j - 1)
+        int16_t R_LR = bgr_pixel[2 + 3 + bgr_pitch];    // Red at (i + 1, j + 1)
+        int16_t G_UL = bgr_pixel[1 - 3 - bgr_pitch];    // Green at (i - 1, j - 1)
+        int16_t G_LR = bgr_pixel[1 + 3 + bgr_pitch];    // Green at (i + 1, j + 1)
+
+        // Compute color differences
+        int16_t CD_UR = R_UR - G_UR;
+        int16_t CD_LL = R_LL - G_LL;
+        int16_t CD_UL = R_UL - G_UL;
+        int16_t CD_LR = R_LR - G_LR;
+
+        // Horizontal and Vertical estimates of (R - G)
+        int16_t CD_h = (CD_UL + CD_LR + 1) >> 1;
+        int16_t CD_v = (CD_UR + CD_LL + 1) >> 1;
+
+        // Compute gradients for edge detection
+        int16_t Grad_h = abs(CD_UL - CD_LR);
+        int16_t Grad_v = abs(CD_UR - CD_LL);
+
+        // Decision based on gradients
+        int16_t CD_est = (Grad_h <= Grad_v) ? CD_h : CD_v;
+#ifdef ENABLE_CLOSE_AVERAGING
+        if (abs(Grad_h - Grad_v) <= 26) {
+            CD_est = (CD_h + CD_v + 1) >> 1;
+        }
 #endif
+
+        // Estimate Red value at blue pixel
+        int16_t G_center = bgr_pixel[1];   // Green at current blue pixel
+        int16_t R_est = G_center + CD_est;
+
+        // Clamp the value
+        bgr_pixel[2] = saturate_cast_int16_to_uint8(R_est);
+    }
+
+    // Lower Right (P3): R pixel
+    {
+        uint8_t* bgr_pixel = bgr_block + bgr_pitch + 3; // Pointer to the pixel at P3
+
+        // Estimate Blue at Red pixel (similar to estimating Red at Blue pixel in RGGB)
+        // Get neighboring blue and green values
+        int16_t B_UR = bgr_pixel[0 + 3 - bgr_pitch];    // Blue at (i - 1, j + 1)
+        int16_t B_LL = bgr_pixel[0 - 3 + bgr_pitch];    // Blue at (i + 1, j - 1)
+        int16_t G_UR = bgr_pixel[1 + 3 - bgr_pitch];    // Green at (i - 1, j + 1)
+        int16_t G_LL = bgr_pixel[1 - 3 + bgr_pitch];    // Green at (i + 1, j - 1)
+
+        int16_t B_UL = bgr_pixel[0 - 3 - bgr_pitch];    // Blue at (i - 1, j - 1)
+        int16_t B_LR = bgr_pixel[0 + 3 + bgr_pitch];    // Blue at (i + 1, j + 1)
+        int16_t G_UL = bgr_pixel[1 - 3 - bgr_pitch];    // Green at (i - 1, j - 1)
+        int16_t G_LR = bgr_pixel[1 + 3 + bgr_pitch];    // Green at (i + 1, j + 1)
+
+        // Compute color differences
+        int16_t CD_UR = B_UR - G_UR;
+        int16_t CD_LL = B_LL - G_LL;
+        int16_t CD_UL = B_UL - G_UL;
+        int16_t CD_LR = B_LR - G_LR;
+
+        // Horizontal and Vertical estimates of (B - G)
+        int16_t CD_h = (CD_UL + CD_LR + 1) >> 1;
+        int16_t CD_v = (CD_UR + CD_LL + 1) >> 1;
+
+        // Compute gradients for edge detection
+        int16_t Grad_h = abs(CD_UL - CD_LR);
+        int16_t Grad_v = abs(CD_UR - CD_LL);
+
+        // Decision based on gradients
+        int16_t CD_est = (Grad_h <= Grad_v) ? CD_h : CD_v;
+#ifdef ENABLE_CLOSE_AVERAGING
+        if (abs(Grad_h - Grad_v) <= 26) {
+            CD_est = (CD_h + CD_v + 1) >> 1;
+        }
+#endif
+
+        // Estimate Blue value at red pixel
+        int16_t G_center = bgr_pixel[1];   // Green at current red pixel
+        int16_t B_est = G_center + CD_est;
+
+        // Clamp the value
+        bgr_pixel[0] = saturate_cast_int16_to_uint8(B_est);
+    }
+
+    // Upper Right (P1): G pixel
+    {
+        uint8_t* bgr_pixel = bgr_block + 3; // Pointer to the pixel at P1
+
+        // Estimate Red at green pixel using bilinear interpolation of (R - G)
+        int16_t R_up = bgr_pixel[2 - bgr_pitch];       // Red at (i - 1, j)
+        int16_t R_down = bgr_pixel[2 + bgr_pitch];     // Red at (i + 1, j)
+        int16_t G_up = bgr_pixel[1 - bgr_pitch];
+        int16_t G_down = bgr_pixel[1 + bgr_pitch];
+
+        int16_t CD_RU = R_up - G_up;
+        int16_t CD_RD = R_down - G_down;
+
+        int16_t CD_R = (CD_RU + CD_RD + 1) >> 1;
+        int16_t G_center = bgr_pixel[1];
+        int16_t R_est = G_center + CD_R;
+
+        // Estimate Blue at green pixel using bilinear interpolation of (B - G)
+        int16_t B_left = bgr_pixel[0 - 3];         // Blue at (i, j - 1)
+        int16_t B_right = bgr_pixel[0 + 3];        // Blue at (i, j + 1)
+        int16_t G_left = bgr_pixel[1 - 3];
+        int16_t G_right = bgr_pixel[1 + 3];
+
+        int16_t CD_BL = B_left - G_left;
+        int16_t CD_BR = B_right - G_right;
+
+        int16_t CD_B = (CD_BL + CD_BR + 1) >> 1;
+        int16_t B_est = G_center + CD_B;
+
+        // Clamp the values
+        bgr_pixel[2] = saturate_cast_int16_to_uint8(R_est);
+        bgr_pixel[0] = saturate_cast_int16_to_uint8(B_est);
+    }
+
+    // Lower Left (P2): G pixel
+    {
+        uint8_t* bgr_pixel = bgr_block + bgr_pitch; // Pointer to the pixel at P2
+
+        // Estimate Red at green pixel using bilinear interpolation of (R - G)
+        int16_t R_left = bgr_pixel[2 - 3];       // Red at (i, j - 1)
+        int16_t R_right = bgr_pixel[2 + 3];      // Red at (i, j + 1)
+        int16_t G_left = bgr_pixel[1 - 3];       // Green at (i, j - 1)
+        int16_t G_right = bgr_pixel[1 + 3];      // Green at (i, j + 1)
+
+        int16_t CD_RL = R_left - G_left;
+        int16_t CD_RR = R_right - G_right;
+
+        int16_t CD_R = (CD_RL + CD_RR + 1) >> 1;
+        int16_t G_center = bgr_pixel[1];
+        int16_t R_est = G_center + CD_R;
+
+        // Estimate Blue at green pixel using bilinear interpolation of (B - G)
+        int16_t B_up = bgr_pixel[0 - bgr_pitch]; // Blue at (i - 1, j)
+        int16_t B_down = bgr_pixel[0 + bgr_pitch]; // Blue at (i + 1, j)
+        int16_t G_up = bgr_pixel[1 - bgr_pitch];
+        int16_t G_down = bgr_pixel[1 + bgr_pitch];
+
+        int16_t CD_BU = B_up - G_up;
+        int16_t CD_BD = B_down - G_down;
+
+        int16_t CD_B = (CD_BU + CD_BD + 1) >> 1;
+        int16_t B_est = G_center + CD_B;
+
+        // Clamp the values
+        bgr_pixel[2] = saturate_cast_int16_to_uint8(R_est);
+        bgr_pixel[0] = saturate_cast_int16_to_uint8(B_est);
     }
 }

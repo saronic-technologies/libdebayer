@@ -8,7 +8,6 @@
 
 #include <opencv2/opencv.hpp>
 
-#include <npp.h>
 #include <cuda_runtime.h>
 
 #include "libdebayercpp/debayer_cpp.h"
@@ -152,61 +151,6 @@ cv::Mat debayerVNG(const cv::Mat& bayer_image) {
     return output_image;
 }
 
-//------------------------------------------------------------------------------
-// NPP Debayering Functions
-
-// Error checking macro
-#define CHECK_CUDA(call) \
-    do { \
-        cudaError_t err = call; \
-        if (err != cudaSuccess) { \
-            std::cerr << "CUDA error in " << __FILE__ << ":" << __LINE__ << ": " << cudaGetErrorString(err) << std::endl; \
-            exit(EXIT_FAILURE); \
-        } \
-    } while(0)
-
-// NPP error checking macro
-#define CHECK_NPP(call) \
-    do { \
-        NppStatus status = call; \
-        if (status != NPP_SUCCESS) { \
-            std::cerr << "NPP error in " << __FILE__ << ":" << __LINE__ << ": " << status << std::endl; \
-            exit(EXIT_FAILURE); \
-        } \
-    } while(0)
-
-cv::Mat debayerNPP(const cv::Mat& rggb) {
-    // Allocate device memory
-    Npp8u* d_rggb;
-    Npp8u* d_rgb;
-    size_t pitch_rggb, pitch_rgb;
-
-    CHECK_CUDA(cudaMallocPitch(&d_rggb, &pitch_rggb, rggb.cols * sizeof(Npp8u), rggb.rows));
-    CHECK_CUDA(cudaMallocPitch(&d_rgb, &pitch_rgb, rggb.cols * 3 * sizeof(Npp8u), rggb.rows));
-
-    // Copy RGGB data to device
-    CHECK_CUDA(cudaMemcpy2D(d_rggb, pitch_rggb, rggb.data, rggb.step, rggb.cols * sizeof(Npp8u), rggb.rows, cudaMemcpyHostToDevice));
-
-    // Set up NPP parameters
-    NppiSize oSrcSize = {rggb.cols, rggb.rows};
-    NppiRect oSrcROI = {0, 0, rggb.cols, rggb.rows};
-
-    // Convert RGGB to RGB using NPP
-    CHECK_NPP(nppiCFAToRGB_8u_C1C3R(d_rggb, pitch_rggb, oSrcSize, oSrcROI, d_rgb, pitch_rgb, NPPI_BAYER_RGGB, NPPI_INTER_UNDEFINED));
-
-    // Allocate host memory for the result
-    cv::Mat output_rgb(rggb.rows, rggb.cols, CV_8UC3);
-
-    // Copy the result back to host
-    CHECK_CUDA(cudaMemcpy2D(output_rgb.data, output_rgb.step, d_rgb, pitch_rgb, rggb.cols * 3 * sizeof(Npp8u), rggb.rows, cudaMemcpyDeviceToHost));
-
-    // Convert RGB to BGR
-    cv::Mat output_bgr;
-    cv::cvtColor(output_rgb, output_bgr, cv::COLOR_RGB2BGR);
-
-    return output_bgr;
-}
-
 std::string getEnvVar(const std::string& varName, const std::string& defaultValue) {
     char* envVar = std::getenv(varName.c_str());
     return envVar ? std::string(envVar) : defaultValue;
@@ -252,11 +196,11 @@ int main() {
         raw_image_t input;
 
         // Convert to Bayer pattern
-        //cv::Mat bayer_image = convertToBGGR(bgr_image);
-        //input.format = SARONIC_DEBAYER_BGGR;
+        cv::Mat bayer_image = convertToBGGR(bgr_image);
+        input.format = SARONIC_DEBAYER_BGGR;
 
-        cv::Mat bayer_image = convertToRGGB(bgr_image);
-        input.format = SARONIC_DEBAYER_RGGB;
+        //cv::Mat bayer_image = convertToRGGB(bgr_image);
+        //input.format = SARONIC_DEBAYER_RGGB;
 
         // Prepare raw_image_t
         input.raw_data = bayer_image.data;
@@ -264,8 +208,8 @@ int main() {
         input.width = bayer_image.cols;
         input.height = bayer_image.rows;
         //input.algorithm = SARONIC_DEBAYER_BILINEAR;
-        input.algorithm = SARONIC_DEBAYER_MALVAR2004;
-        //input.algorithm = SARONIC_DEBAYER_SARONIC1;
+        //input.algorithm = SARONIC_DEBAYER_MALVAR2004;
+        input.algorithm = SARONIC_DEBAYER_MENON2007;
 
         // Prepare bgr_image_t for output
         cv::Mat output_image(bgr_image.rows, bgr_image.cols, CV_8UC3);

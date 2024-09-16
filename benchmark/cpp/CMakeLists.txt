@@ -23,11 +23,12 @@ find_package(libdebayercpp REQUIRED)
 add_executable(test_debayer src/test_debayer.cpp)
 target_link_libraries(test_debayer
     ${OpenCV_LIBS}
-    ${CUDA_nppicc_LIBRARY}
     libdebayercpp::debayercpp
+    ${CUDA_LIBRARIES}
 )
 target_include_directories(test_debayer PRIVATE
     ${OpenCV_INCLUDE_DIRS}
+    ${CUDA_INCLUDE_DIRS}
 )
 
 install(TARGETS test_debayer

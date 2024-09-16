@@ -18,9 +18,9 @@ This is a simple C API that wraps the underlying CUDA kernels. The C
 API assumes the images are already in GPU memory. libdebayer
 implements 3 debayering algorithms:
 
+- [Menon 2007](https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=8c8e4a3cf6d0b8dfdcd36652718ad54afd2fe5fe)
 - [Malvar 2004](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/Demosaicing_ICASSP04.pdf)
 - Bilinear (same as builtin OpenCV)
-- Saronic custom algorithm (TODO: more details here or delete since Malvar 2004 has the best performance)
 
 ### libdebayercpp
 
@@ -53,8 +53,9 @@ run the following: `nix run .#kodak_benchmark_cpp`
 
 - OCV-EA gets Average PSNR: 28.616 dB
 - NPP gets Average PSNR: 28.8522 dB
-- libdebayer CUDA kernel gets Average PSNR: 33.4554 dB (+4.8394dB)
-- Greatly reduces color fringing
+- libdebayer Malvar 2004 CUDA kernel gets Average PSNR: 33.4554 dB (+4.8394 dB)
+- libdebayer Menon 2007 CUDA kernel gets Average PSNR: 37.6907 dB (+9.0747 dB)
+- Eliminates color fringing
 
 #### Image Results
 
@@ -62,12 +63,16 @@ Example output from OpenCV-EA:
 
 ![OpenCV-EA](opencv_ea.out.png)
 
-Example output from NPP:
+Example output from NPP (Nvidia Performance Primitives):
 
 ![NPP](nppver.png)
 
-Example output from our CUDA kernel:
+Example output from our Malvar 2004 CUDA kernel:
 
 ![malvar2004](malvar2004.out.png)
 
+Example outputs from our Menon 2007 CUDA kernel:
 
+![menon2007](menon2007.out.png)
+
+![menon2007-lighthouse](menon2007.lighthouse.png)

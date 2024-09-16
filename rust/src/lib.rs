@@ -44,7 +44,8 @@ pub enum DebayerAlgorithm {
     BilinearRggb2Bgr,
     Malvar2004Rggb2Bgr,
     Malvar2004Bggr2Bgr,
-    Saronic1Rggb2Bgr,
+    Menon2007Rggb2Bgr,
+    Menon2007Bggr2Bgr,
 }
 
 pub enum DebayerImageType {
@@ -133,9 +134,14 @@ impl DebayerInputImage {
                     debayer_bggr2bgr_malvar2004(self.stream, self.img.width as i32, self.img.height as i32, self.img.pitch, output_image.pitch, self.img.raw_data as *mut u8, output_image.raw_data as *mut u8);
                 }
             },
-            DebayerAlgorithm::Saronic1Rggb2Bgr => {
+            DebayerAlgorithm::Menon2007Rggb2Bgr => {
                 unsafe {
-                    debayer_rggb2bgr_saronic1(self.stream, self.img.width as i32, self.img.height as i32, self.img.pitch, output_image.pitch, self.img.raw_data as *mut u8, output_image.raw_data as *mut u8);
+                    debayer_rggb2bgr_menon2007(self.stream, self.img.width as i32, self.img.height as i32, self.img.pitch, output_image.pitch, self.img.raw_data as *mut u8, output_image.raw_data as *mut u8);
+                }
+            },
+            DebayerAlgorithm::Menon2007Bggr2Bgr => {
+                unsafe {
+                    debayer_bggr2bgr_menon2007(self.stream, self.img.width as i32, self.img.height as i32, self.img.pitch, output_image.pitch, self.img.raw_data as *mut u8, output_image.raw_data as *mut u8);
                 }
             }
         }
