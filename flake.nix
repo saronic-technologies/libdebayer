@@ -2,7 +2,7 @@
   description = "libdebayer";
 
   inputs = {
-    nixpkgs.url      = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url      = "github:NixOS/nixpkgs/nixos-24.05";
     jetpack-nixos.url = "github:anduril/jetpack-nixos";
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.url  = "github:numtide/flake-utils";
@@ -18,7 +18,7 @@
         };
 
         cudatoolkit = if system == "aarch64-linux" then jetpack-nixos.legacyPackages.aarch64-linux.cudaPackages.cudatoolkit else pkgs.cudatoolkit;
-        libdebayer = pkgs.stdenv.mkDerivation {
+        libdebayer = pkgs.gcc12Stdenv.mkDerivation {
           pname = "libdebayer";
           version = "0.1.0";
           src = ./c;
@@ -29,7 +29,7 @@
           '';
         };
 
-        libdebayer_cpp = pkgs.stdenv.mkDerivation {
+        libdebayer_cpp = pkgs.gcc12Stdenv.mkDerivation {
           pname = "libdebayer_cpp";
           version = "0.1.0";
           src = ./cpp;
@@ -81,9 +81,10 @@
         packages.fetch_kodak = fetch_kodak;
         packages.kodak_benchmark_cpp_unwrapped = kodak_benchmark_cpp_unwrapped;
         packages.kodak_benchmark_cpp = kodak_benchmark_cpp;
-        
-        devShells.default = mkShell {
-          nativeBuildInputs = with pkgs; [ pkg-config cmake clang ];
+
+        # NOTE: have to use gcc 12 for nvcc+cuda12
+        devShells.default = mkShell.override { stdenv = gcc12Stdenv; } {
+          nativeBuildInputs = with pkgs; [ pkg-config cmake clang ] ;
           buildInputs = with pkgs; [
             gitFull gitRepo gnupg autoconf curl
             procps gnumake util-linux m4 gperf unzip
@@ -103,11 +104,11 @@
           LIBCLANG_PATH = "${pkgs.libclang.lib}/lib/";
 
 
+
           shellHook = ''
              export CUDA_PATH=${cudatoolkit}
              export libdebayer_DIR=${libdebayer}/lib/cmake
              export libdebayercpp_DIR=${libdebayer_cpp}/lib/cmake
-             # export LD_LIBRARY_PATH=${pkgs.linuxPackages.nvidia_x11}/lib:${pkgs.ncurses5}/lib
              export EXTRA_LDFLAGS="-L/lib -L${pkgs.linuxPackages.nvidia_x11}/lib"
              export EXTRA_CCFLAGS="-I/usr/include"
           '';
