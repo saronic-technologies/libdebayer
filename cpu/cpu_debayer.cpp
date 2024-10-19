@@ -5,10 +5,23 @@
 
 #include "cpu_debayer.hpp"
 
+#define ENABLE_PARALLELISM
+
+std::unique_ptr<ThreadPool> Debayer::thread_pool = nullptr;
+
 // Destructor: Ensure memory is freed
 Debayer::~Debayer()
 {
     Free();
+}
+
+void Debayer::InitializeThreadPool()
+{
+    if (!thread_pool) {
+        size_t num_threads = std::thread::hardware_concurrency();
+        if (num_threads == 0) num_threads = 4; // Fallback to 4 threads if detection fails
+        thread_pool = std::make_unique<ThreadPool>(num_threads);
+    }
 }
 
 // Helper function to round up a value to the nearest multiple of a modulus
@@ -102,7 +115,6 @@ void Debayer::Free()
     height = 0;
 }
 
-// Process a raw Bayer image and output a BGR image
 int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
 {
     // Validate input pointers
@@ -123,6 +135,8 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
         return -3;
     }
 
+    InitializeThreadPool();
+
     // Calculate source pitch (input->pitch or tightly packed)
     int input_pitch = (input->pitch != 0) ? input->pitch : input->width;
 
@@ -139,16 +153,113 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
     // Step 3: Pad the left and right edges
     padLeftRightEdges(raw_padded_data, input->width, input->height, raw_padded_pitch, SARONIC_DEBAYER_PAD);
 
-    // At this point, raw_padded_data contains the padded raw image
+#ifdef ENABLE_PARALLELISM
 
-    // Step 4: Estimate the Green channel
-    // Note: The demosaicing functions expect the image to be in BGGR format
-    // Ensure that input->format is BGGR; if not, additional handling is required
-    if (input->format != SARONIC_DEBAYER_BGGR) {
-        std::cerr << "Error: Only BGGR format is supported in this CPU implementation." << std::endl;
-        Free();
-        return -4;
+    // Define tile size (adjust as needed)
+    const int TILE_SIZE = 128;
+
+    // Calculate number of tiles in x and y directions
+    int num_tiles_x = (raw_padded_width + TILE_SIZE - 1) / TILE_SIZE;
+    int num_tiles_y = (raw_padded_height + TILE_SIZE - 1) / TILE_SIZE;
+
+    // Vector to hold futures for green channel tasks
+    std::vector<std::future<void>> green_futures;
+
+    // Submit Green Channel Estimation tasks
+    for (int ty = 0; ty < num_tiles_y; ++ty) {
+        for (int tx = 0; tx < num_tiles_x; ++tx) {
+            // Compute tile boundaries
+            int start_x = tx * TILE_SIZE;
+            int start_y = ty * TILE_SIZE;
+            int end_x = std::min(start_x + TILE_SIZE, raw_padded_width);
+            int end_y = std::min(start_y + TILE_SIZE, raw_padded_height);
+            int tile_width = end_x - start_x;
+            int tile_height = end_y - start_y;
+
+            // Pointers to the current tile in raw and BGR data
+            uint8_t* raw_tile = raw_padded_data + start_y * raw_padded_pitch + start_x;
+            uint8_t* bgr_tile = bgr_padded_data + start_y * bgr_padded_pitch + start_x * 3; // 3 bytes per pixel
+
+            // Capture necessary variables by value to avoid data races
+            green_futures.emplace_back(
+                thread_pool->Submit([=]() {
+                    bggr_menon2007_g_cpu(
+                        raw_tile,
+                        raw_padded_pitch,
+                        bgr_tile,
+                        bgr_padded_pitch,
+                        tile_width,
+                        tile_height
+                    );
+                })
+            );
+        }
     }
+
+    // Wait for all green channel tasks to complete
+    for (auto &fut : green_futures) {
+        fut.get();
+    }
+
+    // Vector to hold futures for red and blue channel tasks
+    std::vector<std::future<void>> rb_futures;
+
+    // Submit Red and Blue Channels Estimation tasks
+    for (int ty = 0; ty < num_tiles_y; ++ty) {
+        for (int tx = 0; tx < num_tiles_x; ++tx) {
+            // Compute tile boundaries
+            int start_x = tx * TILE_SIZE;
+            int start_y = ty * TILE_SIZE;
+            int end_x = std::min(start_x + TILE_SIZE, raw_padded_width);
+            int end_y = std::min(start_y + TILE_SIZE, raw_padded_height);
+            int tile_width = end_x - start_x;
+            int tile_height = end_y - start_y;
+
+            // Pointer to the current tile in BGR data
+            uint8_t* bgr_tile = bgr_padded_data + start_y * bgr_padded_pitch + start_x * 3; // 3 bytes per pixel
+
+            // Capture necessary variables by value to avoid data races
+            rb_futures.emplace_back(
+                thread_pool->Submit([=]() {
+                    bggr_menon2007_rb_cpu(
+                        bgr_tile,
+                        bgr_padded_pitch,
+                        tile_width,
+                        tile_height
+                    );
+                })
+            );
+        }
+    }
+
+    // Wait for all red and blue channel tasks to complete
+    for (auto &fut : rb_futures) {
+        fut.get();
+    }
+
+    // Step 5: Extract the demosaiced BGR data from the padded buffer to the output image
+    // Calculate output pitch (output->pitch or tightly packed)
+    int output_pitch = (output->pitch != 0) ? output->pitch : output->width * 3;
+
+    // Vector to hold futures for the copy tasks
+    std::vector<std::future<void>> copy_futures;
+
+    for (int y = 0; y < input->height; ++y) {
+        copy_futures.emplace_back(
+            thread_pool->Submit([=]() {
+                uint8_t* src_row = bgr_padded_data + (SARONIC_DEBAYER_PAD + y) * bgr_padded_pitch + SARONIC_DEBAYER_PAD * 3;
+                uint8_t* dst_row = output->bgr_data + y * output_pitch;
+                std::memcpy(dst_row, src_row, input->width * 3 * sizeof(uint8_t));
+            })
+        );
+    }
+
+    // Wait for all copy tasks to complete
+    for (auto &fut : copy_futures) {
+        fut.get();
+    }
+
+#else
 
     // Estimate Green channel using the Menon 2007 algorithm
     bggr_menon2007_g_cpu(
@@ -168,12 +279,12 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
         raw_padded_height     // Height of the padded raw data
     );
 
-    // Step 5: Extract the demosaiced BGR data from the padded buffer to the output image
     for (int y = 0; y < input->height; ++y) {
         uint8_t* src_row = bgr_padded_data + (SARONIC_DEBAYER_PAD + y) * bgr_padded_pitch + SARONIC_DEBAYER_PAD * 3;
         uint8_t* dst_row = output->bgr_data + y * ((output->pitch != 0) ? output->pitch : output->width * 3);
         std::memcpy(dst_row, src_row, input->width * 3 * sizeof(uint8_t));
-    }
+     }
+#endif
 
     // Free the allocated padded buffers
     Free();

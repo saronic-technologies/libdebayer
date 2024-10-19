@@ -15,6 +15,8 @@
 // Include the CPU kernel functions for padding and demosaicing
 #include "cpu_kernel.hpp"
 
+#include "threadpool.hpp"
+
 /**
  * @brief Padding size for the debayering process.
  *
@@ -139,6 +141,12 @@ private:
     // Original image dimensions
     int width = -1;
     int height = -1;
+
+    // Static thread pool instance
+    static std::unique_ptr<ThreadPool> thread_pool;
+
+    // Initialize the thread pool (called once)
+    static void InitializeThreadPool();
 
     /**
      * @brief Helper function to round up a value to the nearest multiple of a modulus.
