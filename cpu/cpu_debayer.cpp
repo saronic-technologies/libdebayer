@@ -156,7 +156,7 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
 #ifdef ENABLE_PARALLELISM
 
     // Define tile size (adjust as needed)
-    const int TILE_SIZE = 128;
+    const int TILE_SIZE = 64;
 
     // Calculate number of tiles in x and y directions
     int num_tiles_x = (raw_padded_width + TILE_SIZE - 1) / TILE_SIZE;

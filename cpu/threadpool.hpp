@@ -4,7 +4,6 @@
 
 #include <vector>
 #include <thread>
-#include <queue>
 #include <functional>
 #include <mutex>
 #include <condition_variable>
@@ -13,6 +12,9 @@
 #include <stdexcept>
 #include <memory>
 #include <iostream>
+
+// Include moodycamel's ConcurrentQueue
+#include "concurrentqueue.h"
 
 #ifdef __linux__
 #include <pthread.h>
@@ -40,14 +42,10 @@ public:
 
         std::future<return_type> res = task_ptr->get_future();
         {
-            std::unique_lock<std::mutex> lock(queue_mutex);
-
-            // Don't allow enqueueing after stopping the pool
-            if (stop.load())
-                throw std::runtime_error("Submit on stopped ThreadPool");
-
-            tasks.emplace([task_ptr](){ (*task_ptr)(); });
+            // Enqueue the task
+            tasks.enqueue([task_ptr](){ (*task_ptr)(); });
         }
+        // Notify one worker
         condition.notify_one();
         return res;
     }
@@ -60,16 +58,13 @@ private:
     // Worker threads
     std::vector<std::thread> workers;
 
-    // Task queue
-    std::queue<std::function<void()>> tasks;
+    // Task queue using moodycamel's ConcurrentQueue
+    moodycamel::ConcurrentQueue<std::function<void()>> tasks;
 
-    // Synchronization
-    std::mutex queue_mutex;
+    // Synchronization for condition variable
+    std::mutex condition_mutex;
     std::condition_variable condition;
     std::atomic<bool> stop;
-
-    // Pin a thread to a specific CPU core
-    void PinThreadToCore(std::thread& thread, size_t core_id);
 };
 
 #endif // THREAD_POOL_HPP
