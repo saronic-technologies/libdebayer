@@ -86,28 +86,17 @@ void padLeftRightEdges(uint8_t* data, int width, int height, int pitch, int pad)
     assert(pitch >= (width + 2 * pad) && "Pitch must be at least width + 2 * pad.");
     assert(pad > 0 && "Padding size must be positive.");
 
-    // Iterate over each row of the original image
     for (int y = 0; y < height; ++y) {
-        // Pointer to the start of the current row in the original image
         uint8_t* original_row = data + (pad + y) * pitch + pad;
-
-        // Pointers to the left and right padding areas of the current row
         uint8_t* dest_left  = data + (pad + y) * pitch;
         uint8_t* dest_right = data + (pad + y) * pitch + pad + width;
 
-        // Retrieve the first and last pixel values of the original row
         uint8_t first_pixel = original_row[0];
         uint8_t last_pixel  = original_row[width - 1];
 
-        // Fill the left padding with the first pixel value
-        for (int x = 0; x < pad; ++x) {
-            dest_left[x] = first_pixel;
-        }
-
-        // Fill the right padding with the last pixel value
-        for (int x = 0; x < pad; ++x) {
-            dest_right[x] = last_pixel;
-        }
+        // Use memset-like operations for padding
+        std::memset(dest_left, first_pixel, pad);
+        std::memset(dest_right, last_pixel, pad);
     }
 }
 
