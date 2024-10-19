@@ -223,21 +223,6 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
     // Wait for all red and blue channel tasks to complete
     thread_pool->WaitAll();
 
-    // Step 5: Extract the demosaiced BGR data from the padded buffer to the output image
-    // Calculate output pitch (output->pitch or tightly packed)
-    int output_pitch = (output->pitch != 0) ? output->pitch : output->width * 3;
-
-    for (int y = 0; y < input->height; ++y) {
-        thread_pool->Submit([=]() {
-            uint8_t* src_row = bgr_padded_data + (SARONIC_DEBAYER_PAD + y) * bgr_padded_pitch + SARONIC_DEBAYER_PAD * 3;
-            uint8_t* dst_row = output->bgr_data + y * output_pitch;
-            std::memcpy(dst_row, src_row, input->width * 3 * sizeof(uint8_t));
-        });
-    }
-
-    // Wait for all copy tasks to complete
-    thread_pool->WaitAll();
-
 #else
 
     // Estimate Green channel using the Menon 2007 algorithm
@@ -257,13 +242,13 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
         raw_padded_width,     // Width of the padded raw data
         raw_padded_height     // Height of the padded raw data
     );
+#endif
 
     for (int y = 0; y < input->height; ++y) {
         uint8_t* src_row = bgr_padded_data + (SARONIC_DEBAYER_PAD + y) * bgr_padded_pitch + SARONIC_DEBAYER_PAD * 3;
         uint8_t* dst_row = output->bgr_data + y * ((output->pitch != 0) ? output->pitch : output->width * 3);
         std::memcpy(dst_row, src_row, input->width * 3 * sizeof(uint8_t));
      }
-#endif
 
     // Free the allocated padded buffers
     Free();
