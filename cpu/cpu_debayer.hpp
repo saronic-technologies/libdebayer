@@ -52,22 +52,22 @@ enum BayerFormat {
  * @brief Structure representing a raw Bayer image.
  */
 struct raw_image_t {
-    int width;          ///< Width of the raw image in pixels
-    int height;         ///< Height of the raw image in pixels
-    uint8_t* raw_data;  ///< Pointer to raw Bayer data
-    int pitch;          ///< Number of bytes per row (0 indicates tightly packed)
-    int algorithm;      ///< Debayering algorithm (e.g., BILINEAR, MALVAR2004, MENON2007)
-    int format;         ///< Bayer pattern format (e.g., RGGB, BGGR)
+    int width = -1;          ///< Width of the raw image in pixels
+    int height = -1;         ///< Height of the raw image in pixels
+    uint8_t* raw_data = nullptr;  ///< Pointer to raw Bayer data
+    int pitch = 0;          ///< Number of bytes per row (0 indicates tightly packed)
+    int algorithm = 0;      ///< Debayering algorithm (e.g., BILINEAR, MALVAR2004, MENON2007)
+    int format = 0;         ///< Bayer pattern format (e.g., RGGB, BGGR)
 };
 
 /**
  * @brief Structure representing a BGR image.
  */
 struct bgr_image_t {
-    int width;          ///< Width of the BGR image in pixels
-    int height;         ///< Height of the BGR image in pixels
-    uint8_t* bgr_data;  ///< Pointer to BGR data
-    int pitch;          ///< Number of bytes per row (0 indicates tightly packed)
+    int width = -1;          ///< Width of the BGR image in pixels
+    int height = -1;         ///< Height of the BGR image in pixels
+    uint8_t* bgr_data = nullptr;  ///< Pointer to BGR data
+    int pitch = 0;          ///< Number of bytes per row (0 indicates tightly packed)
 };
 
 /**
@@ -78,11 +78,6 @@ struct bgr_image_t {
  */
 class Debayer {
 public:
-    /**
-     * @brief Constructor: Initializes member variables.
-     */
-    Debayer();
-
     /**
      * @brief Destructor: Ensures that allocated memory is freed.
      */
@@ -130,20 +125,20 @@ public:
 
 private:
     // Padded raw image data
-    uint8_t* raw_padded_data;
-    int raw_padded_pitch;
-    int raw_padded_width;
-    int raw_padded_height;
+    uint8_t* raw_padded_data = nullptr;
+    int raw_padded_pitch = -1;
+    int raw_padded_width = -1;
+    int raw_padded_height = -1;
 
     // Padded BGR image data
-    uint8_t* bgr_padded_data;
-    int bgr_padded_pitch;
-    int bgr_padded_width;
-    int bgr_padded_height;
+    uint8_t* bgr_padded_data = nullptr;
+    int bgr_padded_pitch = -1;
+    int bgr_padded_width = -1;
+    int bgr_padded_height = -1;
 
     // Original image dimensions
-    int width;
-    int height;
+    int width = -1;
+    int height = -1;
 
     /**
      * @brief Helper function to round up a value to the nearest multiple of a modulus.

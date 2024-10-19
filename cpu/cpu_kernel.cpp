@@ -11,6 +11,8 @@
 #include <cstring>
 #include <cassert>
 
+#define ENABLE_CLOSE_AVERAGING
+
 /**
  * @brief Pads the top and bottom edges of an image by replicating the first and last rows.
  *
@@ -166,8 +168,8 @@ void bggr_menon2007_g_cpu(
     for(int y = 0; y < height; y += 2) {
         for(int x = 0; x < width; x += 2) {
             // Calculate the starting index of the 2x2 block in raw and BGR buffers
-            const uint8_t* block = raw + y * raw_pitch + x * 2;
-            uint8_t* bgr_block   = bgr + y * bgr_pitch + x * 3 * 2;
+            const uint8_t* block = raw + y * raw_pitch + x;
+            uint8_t* bgr_block   = bgr + y * bgr_pitch + x * 3;
 
             // --- Upper Left Pixel (P0): Blue Pixel ---
             {
@@ -296,8 +298,9 @@ void bggr_menon2007_g_cpu(
                 #endif
 
                 // Assign Red and estimated Green values to the BGR buffer
+                bgr_p3[2] = P3[0]; // Red channel
                 bgr_p3[1] = saturate_cast_int16_to_uint8(G_est_p3); // Green channel
-                // Blue and Red channels will be filled in separate functions
+                // Blue channel will be filled in separate functions
             }
         }
     }
@@ -353,21 +356,21 @@ void bggr_menon2007_rb_cpu(
                 // Neighboring Red and Green pixels
                 // Ensure that we do not access out-of-bounds memory
                 // This assumes that the image has been appropriately padded
-                uint8_t R_UR = *(P0 + 2 + 3 - bgr_pitch);   // R at (x+1, y-1)
-                uint8_t R_LL = *(P0 + 2 - 3 + bgr_pitch);   // R at (x-1, y+1)
-                uint8_t G_UR = *(P0 + 1 + 3 - bgr_pitch);   // G at (x+1, y-1)
-                uint8_t G_LL = *(P0 + 1 - 3 + bgr_pitch);   // G at (x-1, y+1)
+                int16_t R_UR = *(P0 + 2 + 3 - bgr_pitch);   // R at (x+1, y-1)
+                int16_t R_LL = *(P0 + 2 - 3 + bgr_pitch);   // R at (x-1, y+1)
+                int16_t G_UR = *(P0 + 1 + 3 - bgr_pitch);   // G at (x+1, y-1)
+                int16_t G_LL = *(P0 + 1 - 3 + bgr_pitch);   // G at (x-1, y+1)
 
-                uint8_t R_UL = *(P0 + 2 - 3 - bgr_pitch);   // R at (x-1, y-1)
-                uint8_t R_LR = *(P0 + 2 + 3 + bgr_pitch);   // R at (x+1, y+1)
-                uint8_t G_UL = *(P0 + 1 - 3 - bgr_pitch);   // G at (x-1, y-1)
-                uint8_t G_LR = *(P0 + 1 + 3 + bgr_pitch);   // G at (x+1, y+1)
+                int16_t R_UL = *(P0 + 2 - 3 - bgr_pitch);   // R at (x-1, y-1)
+                int16_t R_LR = *(P0 + 2 + 3 + bgr_pitch);   // R at (x+1, y+1)
+                int16_t G_UL = *(P0 + 1 - 3 - bgr_pitch);   // G at (x-1, y-1)
+                int16_t G_LR = *(P0 + 1 + 3 + bgr_pitch);   // G at (x+1, y+1)
 
                 // Compute color differences for Red channel estimation
-                int16_t CD_UR = static_cast<int16_t>(R_UR) - static_cast<int16_t>(G_UR);
-                int16_t CD_LL = static_cast<int16_t>(R_LL) - static_cast<int16_t>(G_LL);
-                int16_t CD_UL = static_cast<int16_t>(R_UL) - static_cast<int16_t>(G_UL);
-                int16_t CD_LR = static_cast<int16_t>(R_LR) - static_cast<int16_t>(G_LR);
+                int16_t CD_UR = R_UR - G_UR;
+                int16_t CD_LL = R_LL - G_LL;
+                int16_t CD_UL = R_UL - G_UL;
+                int16_t CD_LR = R_LR - G_LR;
 
                 // Horizontal and Vertical estimates
                 int16_t CD_h = (CD_UL + CD_LR + 1) >> 1;

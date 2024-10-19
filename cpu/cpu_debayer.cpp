@@ -3,23 +3,7 @@
  * @brief CPU-based debayering implementation for converting raw Bayer images to BGR format.
  */
 
-#include "debayer_cpp.h"
-
-// Constructor: Initialize member variables
-Debayer::Debayer()
-    : raw_padded_data(nullptr),
-      raw_padded_pitch(0),
-      raw_padded_width(0),
-      raw_padded_height(0),
-      bgr_padded_data(nullptr),
-      bgr_padded_pitch(0),
-      bgr_padded_width(0),
-      bgr_padded_height(0),
-      width(0),
-      height(0)
-{
-    // Initialization code (if any)
-}
+#include "cpu_debayer.hpp"
 
 // Destructor: Ensure memory is freed
 Debayer::~Debayer()
@@ -45,12 +29,12 @@ bool Debayer::Allocate(int new_width, int new_height)
         return true;
     }
 
+    // Free any previously allocated memory
+    Free();
+
     // Update dimensions
     width = new_width;
     height = new_height;
-
-    // Free any previously allocated memory
-    Free();
 
     // Calculate padded dimensions aligned with kernel block size
     const int padded_width = SARONIC_DEBAYER_PAD + RoundUp(width + SARONIC_DEBAYER_PAD, KERNEL_BLOCK_SIZE);
@@ -143,17 +127,17 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
     int input_pitch = (input->pitch != 0) ? input->pitch : input->width;
 
     // Step 1: Copy raw data into the center of the padded raw buffer
-    for (int y = 0; y < height; ++y) {
+    for (int y = 0; y < input->height; ++y) {
         const uint8_t* src_row = input->raw_data + y * input_pitch;
         uint8_t* dst_row = raw_padded_data + (SARONIC_DEBAYER_PAD + y) * raw_padded_pitch + SARONIC_DEBAYER_PAD;
-        std::memcpy(dst_row, src_row, width * sizeof(uint8_t));
+        std::memcpy(dst_row, src_row, input->width * sizeof(uint8_t));
     }
 
     // Step 2: Pad the top and bottom edges
-    padTopBottomEdges(raw_padded_data, width, height, raw_padded_pitch, SARONIC_DEBAYER_PAD);
+    padTopBottomEdges(raw_padded_data, input->width, input->height, raw_padded_pitch, SARONIC_DEBAYER_PAD);
 
     // Step 3: Pad the left and right edges
-    padLeftRightEdges(raw_padded_data, width, height, raw_padded_pitch, SARONIC_DEBAYER_PAD);
+    padLeftRightEdges(raw_padded_data, input->width, input->height, raw_padded_pitch, SARONIC_DEBAYER_PAD);
 
     // At this point, raw_padded_data contains the padded raw image
 
@@ -185,10 +169,10 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
     );
 
     // Step 5: Extract the demosaiced BGR data from the padded buffer to the output image
-    for (int y = 0; y < height; ++y) {
+    for (int y = 0; y < input->height; ++y) {
         uint8_t* src_row = bgr_padded_data + (SARONIC_DEBAYER_PAD + y) * bgr_padded_pitch + SARONIC_DEBAYER_PAD * 3;
         uint8_t* dst_row = output->bgr_data + y * ((output->pitch != 0) ? output->pitch : output->width * 3);
-        std::memcpy(dst_row, src_row, width * 3 * sizeof(uint8_t));
+        std::memcpy(dst_row, src_row, input->width * 3 * sizeof(uint8_t));
     }
 
     // Free the allocated padded buffers

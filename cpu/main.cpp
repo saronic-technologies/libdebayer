@@ -3,7 +3,7 @@
  * @brief Main application for CPU-based debayering using OpenCV.
  */
 
-#include "debayer_cpp.h"      // Include the Debayer class header
+#include "cpu_debayer.hpp"    // Include the Debayer class header
 #include "cpu_kernel.hpp"     // Include the CPU kernel functions
 
 #include <opencv2/opencv.hpp> // OpenCV for image processing

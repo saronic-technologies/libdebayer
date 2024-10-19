@@ -15,9 +15,9 @@ include_directories(include)
 
 # Source files
 set(SOURCES
-    src/main.cpp
-    src/debayer_cpp.cpp
-    src/cpu_kernel.cpp
+    main.cpp
+    cpu_debayer.cpp
+    cpu_kernel.cpp
 )
 
 # Add executable
