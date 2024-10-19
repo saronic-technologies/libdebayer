@@ -162,9 +162,6 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
     int num_tiles_x = (raw_padded_width + TILE_SIZE - 1) / TILE_SIZE;
     int num_tiles_y = (raw_padded_height + TILE_SIZE - 1) / TILE_SIZE;
 
-    // Vector to hold futures for green channel tasks
-    std::vector<std::future<void>> green_futures;
-
     // Submit Green Channel Estimation tasks
     for (int ty = 0; ty < num_tiles_y; ++ty) {
         for (int tx = 0; tx < num_tiles_x; ++tx) {
@@ -181,28 +178,21 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
             uint8_t* bgr_tile = bgr_padded_data + start_y * bgr_padded_pitch + start_x * 3; // 3 bytes per pixel
 
             // Capture necessary variables by value to avoid data races
-            green_futures.emplace_back(
-                thread_pool->Submit([=]() {
-                    bggr_menon2007_g_cpu(
-                        raw_tile,
-                        raw_padded_pitch,
-                        bgr_tile,
-                        bgr_padded_pitch,
-                        tile_width,
-                        tile_height
-                    );
-                })
-            );
+            thread_pool->Submit([=]() {
+                bggr_menon2007_g_cpu(
+                    raw_tile,
+                    raw_padded_pitch,
+                    bgr_tile,
+                    bgr_padded_pitch,
+                    tile_width,
+                    tile_height
+                );
+            });
         }
     }
 
     // Wait for all green channel tasks to complete
-    for (auto &fut : green_futures) {
-        fut.get();
-    }
-
-    // Vector to hold futures for red and blue channel tasks
-    std::vector<std::future<void>> rb_futures;
+    thread_pool->WaitAll();
 
     // Submit Red and Blue Channels Estimation tasks
     for (int ty = 0; ty < num_tiles_y; ++ty) {
@@ -219,45 +209,34 @@ int Debayer::Process(const raw_image_t* input, bgr_image_t* output)
             uint8_t* bgr_tile = bgr_padded_data + start_y * bgr_padded_pitch + start_x * 3; // 3 bytes per pixel
 
             // Capture necessary variables by value to avoid data races
-            rb_futures.emplace_back(
-                thread_pool->Submit([=]() {
-                    bggr_menon2007_rb_cpu(
-                        bgr_tile,
-                        bgr_padded_pitch,
-                        tile_width,
-                        tile_height
-                    );
-                })
-            );
+            thread_pool->Submit([=]() {
+                bggr_menon2007_rb_cpu(
+                    bgr_tile,
+                    bgr_padded_pitch,
+                    tile_width,
+                    tile_height
+                );
+            });
         }
     }
 
     // Wait for all red and blue channel tasks to complete
-    for (auto &fut : rb_futures) {
-        fut.get();
-    }
+    thread_pool->WaitAll();
 
     // Step 5: Extract the demosaiced BGR data from the padded buffer to the output image
     // Calculate output pitch (output->pitch or tightly packed)
     int output_pitch = (output->pitch != 0) ? output->pitch : output->width * 3;
 
-    // Vector to hold futures for the copy tasks
-    std::vector<std::future<void>> copy_futures;
-
     for (int y = 0; y < input->height; ++y) {
-        copy_futures.emplace_back(
-            thread_pool->Submit([=]() {
-                uint8_t* src_row = bgr_padded_data + (SARONIC_DEBAYER_PAD + y) * bgr_padded_pitch + SARONIC_DEBAYER_PAD * 3;
-                uint8_t* dst_row = output->bgr_data + y * output_pitch;
-                std::memcpy(dst_row, src_row, input->width * 3 * sizeof(uint8_t));
-            })
-        );
+        thread_pool->Submit([=]() {
+            uint8_t* src_row = bgr_padded_data + (SARONIC_DEBAYER_PAD + y) * bgr_padded_pitch + SARONIC_DEBAYER_PAD * 3;
+            uint8_t* dst_row = output->bgr_data + y * output_pitch;
+            std::memcpy(dst_row, src_row, input->width * 3 * sizeof(uint8_t));
+        });
     }
 
     // Wait for all copy tasks to complete
-    for (auto &fut : copy_futures) {
-        fut.get();
-    }
+    thread_pool->WaitAll();
 
 #else
 

@@ -7,7 +7,6 @@
 #include <functional>
 #include <mutex>
 #include <condition_variable>
-#include <future>
 #include <atomic>
 #include <stdexcept>
 #include <memory>
@@ -24,31 +23,16 @@
 class ThreadPool {
 public:
     // Constructor: Initializes the thread pool with a given number of threads
-    ThreadPool(size_t num_threads);
+    explicit ThreadPool(size_t num_threads);
 
     // Destructor: Waits for all tasks to finish and joins all threads
     ~ThreadPool();
 
     // Submit a task to the thread pool
-    template<class F, class... Args>
-    auto Submit(F&& f, Args&&... args) 
-        -> std::future<typename std::result_of<F(Args...)>::type>
-    {
-        using return_type = typename std::result_of<F(Args...)>::type;
+    void Submit(const std::function<void()>& task);
 
-        auto task_ptr = std::make_shared<std::packaged_task<return_type()>>(
-            std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-        );
-
-        std::future<return_type> res = task_ptr->get_future();
-        {
-            // Enqueue the task
-            tasks.enqueue([task_ptr](){ (*task_ptr)(); });
-        }
-        // Notify one worker
-        condition.notify_one();
-        return res;
-    }
+    // Wait for all submitted tasks to complete
+    void WaitAll();
 
     // Prevent copy and assignment
     ThreadPool(const ThreadPool&) = delete;
@@ -64,7 +48,19 @@ private:
     // Synchronization for condition variable
     std::mutex condition_mutex;
     std::condition_variable condition;
+
+    // Synchronization for waiting
+    std::mutex wait_mutex;
+    std::condition_variable wait_condition;
+
+    // Atomic flag to stop the pool
     std::atomic<bool> stop;
+
+    // Atomic counter for tasks in progress
+    std::atomic<size_t> tasks_in_progress;
+
+    // Worker thread function
+    void WorkerThread();
 };
 
 #endif // THREAD_POOL_HPP
