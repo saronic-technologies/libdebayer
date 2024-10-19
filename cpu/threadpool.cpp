@@ -5,9 +5,6 @@
 #ifdef __linux__
     #include <pthread.h>    // For pthread_setaffinity_np
     #include <sched.h>      // For CPU_SET and CPU_ZERO
-#elif defined(__APPLE__)
-    #include <mach/mach.h>              // For Mach thread functions
-    #include <mach/thread_policy.h>     // For THREAD_AFFINITY_POLICY
 #endif
 
 // Constructor Implementation
@@ -34,23 +31,6 @@ ThreadPool::ThreadPool(size_t num_threads)
                                         sizeof(cpu_set_t), &cpuset);
         if (rc != 0) {
             std::cerr << "Error setting thread affinity on Linux: " << rc << std::endl;
-        }
-#elif defined(__APPLE__)
-        thread_affinity_policy_data_t policy;
-        policy.affinity_tag = static_cast<integer_t>(i % num_cores);
-
-        // Get the Mach thread port from the pthread
-        thread_port_t mach_thread = pthread_mach_thread_np(workers.back().native_handle());
-
-        kern_return_t kr = thread_policy_set(
-            mach_thread,
-            THREAD_AFFINITY_POLICY,
-            (thread_policy_t)&policy,
-            THREAD_AFFINITY_POLICY_COUNT
-        );
-
-        if (kr != KERN_SUCCESS) {
-            std::cerr << "Error setting thread affinity on macOS: " << kr << std::endl;
         }
 #endif
     }
